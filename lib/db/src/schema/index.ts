@@ -53,3 +53,4 @@ export * from "./organizations";
 export * from "./event-bus";
 export * from "./scheduler";
 export * from "./workflow";
+export * from "./engine-audit";

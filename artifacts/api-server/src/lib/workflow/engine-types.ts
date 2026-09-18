@@ -9,6 +9,12 @@
  */
 import type { WorkflowRun, WorkflowStepDefinition } from "./types";
 
+export interface CompensationState {
+  completedStepIds: string[];
+  attempts: number;
+  lastError?: string;
+}
+
 export interface RunStepOutcome {
   ok: boolean;
   output?: Record<string, unknown>;

@@ -41,9 +41,9 @@
  * than guessing whether it's still safe to keep unwinding earlier steps
  * whose own compensations might now be operating on inconsistent state.
  */
-import { getStepRuns, insertStepRetry } from "./run-store";
+import { getStepRuns, insertStepRetry, updateCompensationState } from "./run-store";
 import type { WorkflowDefinition, WorkflowRun } from "./types";
-import type { RunStepFn } from "./engine-types";
+import type { CompensationState, RunStepFn } from "./engine-types";
 
 export interface CompensationResult {
   ok: boolean;
@@ -66,7 +66,13 @@ export async function runCompensation(run: WorkflowRun, definition: WorkflowDefi
 
   const stepById = new Map(definition.steps.map((s) => [s.id, s]));
   const compensated: string[] = [];
-  const seen = new Set<string>(); // a step id can appear more than once across retried attempts; compensate it once
+  const persisted = (run.compensationState ?? {}) as Partial<CompensationState>;
+  const seen = new Set<string>(persisted.completedStepIds ?? []);
+  const state: CompensationState = {
+    completedStepIds: [...seen],
+    attempts: run.compensationAttempts,
+    lastError: persisted.lastError,
+  };
 
   for (const stepRun of completedNewestFirst) {
     if (seen.has(stepRun.stepId)) continue;
@@ -87,9 +93,13 @@ export async function runCompensation(run: WorkflowRun, definition: WorkflowDefi
     await insertStepRetry(run.id, compensationStepId, 1, compensationStep.input);
     const outcome = await runStep(run, compensationStep, 1);
     if (!outcome.ok) {
+      state.lastError = outcome.error;
+      await updateCompensationState(run.id, state, state.lastError);
       return { ok: false, compensated, failedAt: compensationStepId, error: outcome.error };
     }
     compensated.push(compensationStepId);
+    state.completedStepIds.push(compensationStepId);
+    await updateCompensationState(run.id, state);
   }
 
   return { ok: true, compensated };

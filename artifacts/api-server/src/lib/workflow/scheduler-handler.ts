@@ -23,7 +23,8 @@
  */
 import { registerJobHandler, type ScheduledJob } from "../scheduler";
 import { resumeRun, type WorkflowRuntimeEnv } from "./engine";
-import { WORKFLOW_RESUME_JOB_TYPE, type WorkflowResumeJobPayload } from "./scheduler-integration";
+import { WORKFLOW_RESUME_JOB_TYPE, WORKFLOW_COMPENSATE_JOB_TYPE, type WorkflowResumeJobPayload } from "./scheduler-integration";
+import { resumeCompensation } from "./engine";
 
 /**
  * Call once at boot with the app's real policy engine + subject
@@ -43,5 +44,14 @@ export function registerWorkflowResumeHandler(env: WorkflowRuntimeEnv = {}): voi
       await resumeRun(runId, env);
     },
     { defaultMaxAttempts: 5, owner: "workflow", description: '§34 workflowResumeHandler — wakes a WAITING workflow run (§24) or a backed-off step retry.' },
+  );
+  registerJobHandler<{ runId: string }>(
+    WORKFLOW_COMPENSATE_JOB_TYPE,
+    async (job) => {
+      const runId = job.payload?.runId;
+      if (!runId) throw new Error(`"${WORKFLOW_COMPENSATE_JOB_TYPE}" job ${job.id} has no runId in its payload`);
+      await resumeCompensation(runId, undefined, env);
+    },
+    { defaultMaxAttempts: 1, owner: "workflow", description: "J7 durable compensation resume." },
   );
 }

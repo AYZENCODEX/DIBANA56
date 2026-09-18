@@ -56,6 +56,7 @@ export const workflowRunTable = pgTable("workflow_run", {
   // correlationId/input). Never secrets — enforced by lib/workflow/
   // context.ts, not by this schema.
   context: jsonb("context").$type<Record<string, unknown>>().notNull().default({}),
+  traceId: text("trace_id"),
   correlationId: text("correlation_id"),
   // Part H1 (migration 114) — a PARTIAL unique index on
   // (definition_id, causation_id) WHERE causation_id IS NOT NULL lives
@@ -81,6 +82,9 @@ export const workflowRunTable = pgTable("workflow_run", {
   // §24 Waiting — set while status = WAITING; NULL otherwise. Part D
   // wires the scheduler to wake a run here.
   nextResumeAt: timestamp("next_resume_at"),
+  compensationState: jsonb("compensation_state").$type<Record<string, unknown>>(),
+  compensationAttempts: integer("compensation_attempts").notNull().default(0),
+  maxCompensationAttempts: integer("max_compensation_attempts").notNull().default(3),
 
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

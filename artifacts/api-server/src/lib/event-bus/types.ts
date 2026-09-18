@@ -28,6 +28,7 @@ export interface EventEnvelope<T = unknown> {
     source?: string;
   };
 
+  traceId?: string;
   correlationId?: string;
   causationId?: string;
 
@@ -65,6 +66,7 @@ export interface PublishEventParams<T = unknown> {
   version?: number; // defaults to the registered definition's version, else 1
   payload: T;
   actor?: EventEnvelope["actor"];
+  traceId?: string;
   aggregate?: EventEnvelope["aggregate"];
   correlationId?: string;
   causationId?: string;

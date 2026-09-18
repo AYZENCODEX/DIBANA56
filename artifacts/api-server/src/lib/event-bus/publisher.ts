@@ -28,6 +28,7 @@ import { logger } from "../logger";
 import { validateEventPayload, getEventDefinition } from "./event-registry";
 import { recordPublished, recordPublishLatency } from "./metrics";
 import type { EventEnvelope, PublishEventParams } from "./types";
+import { ensureTraceId } from "../trace-context";
 
 // Same shape as db.transaction(async (tx) => ...)'s callback param —
 // inferred straight off `db`, matching mail-send-queue.ts's DbTx alias so
@@ -58,6 +59,7 @@ export async function publishEvent<T = unknown>(
     version: params.version ?? def?.version ?? 1,
     occurredAt: new Date().toISOString(),
     actor: params.actor,
+    traceId: ensureTraceId(params.traceId, params.correlationId),
     correlationId: params.correlationId,
     causationId: params.causationId,
     aggregate: params.aggregate,
@@ -79,6 +81,7 @@ export async function publishEvent<T = unknown>(
     eventVersion: envelope.version,
     occurredAt: new Date(envelope.occurredAt),
     actor: envelope.actor,
+    traceId: envelope.traceId,
     correlationId: envelope.correlationId,
     causationId: envelope.causationId,
     aggregateType: envelope.aggregate?.type,

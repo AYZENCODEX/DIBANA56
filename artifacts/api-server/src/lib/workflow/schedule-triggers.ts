@@ -69,6 +69,7 @@ import { executeRun } from "./engine";
 import type { WorkflowRuntimeEnv } from "./engine";
 import { startRun } from "./run-store";
 import type { WorkflowContext } from "./types";
+import { ensureTraceId } from "../trace-context";
 
 export const WORKFLOW_SCHEDULE_TRIGGER_JOB_TYPE = "workflow.trigger.schedule";
 export const WORKFLOW_DELAYED_TRIGGER_JOB_TYPE = "workflow.trigger.delayed";
@@ -78,6 +79,7 @@ export interface WorkflowTriggerJobPayload {
   workflowId: string;
   context?: WorkflowContext;
   causationId?: string;
+  traceId?: string;
 }
 
 /**
@@ -142,6 +144,7 @@ export function registerWorkflowTriggerJobHandlers(env: WorkflowRuntimeEnv = {})
       context: job.payload?.context,
       correlationId: job.payload?.context?.correlationId,
       causationId: job.payload?.causationId,
+      traceId: job.payload?.traceId ?? job.traceId,
     });
     await executeRun(runId, env);
   };
@@ -183,6 +186,8 @@ export async function registerWorkflowScheduleTriggers(env: WorkflowRuntimeEnv =
       timezone: def.trigger.timezone,
       payload: { workflowId: def.id },
       correlationId: def.id,
+      traceId: def.id,
+      idempotencyKey: `workflow.schedule:${def.id}`,
     });
     created += 1;
   }
@@ -246,8 +251,9 @@ export async function registerWorkflowDelayedTriggers(env: WorkflowRuntimeEnv = 
                 input: (envelope.payload && typeof envelope.payload === "object" ? envelope.payload : { value: envelope.payload }) as Record<string, unknown>,
               },
               causationId: envelope.id,
+                traceId: ensureTraceId(envelope.traceId, envelope.correlationId),
             },
-            { correlationId: envelope.correlationId },
+            { idempotencyKey: `workflow.delayed:${envelope.id}:${workflowId}`, traceId: envelope.traceId, correlationId: envelope.correlationId, causationId: envelope.id },
           );
         } catch (err) {
           // Part H3 — recognize migration 115's partial unique index

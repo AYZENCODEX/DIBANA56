@@ -25,6 +25,7 @@ export const eventOutboxTable = pgTable("event_outbox", {
   publishedAt: timestamp("published_at"),
 
   actor: jsonb("actor").$type<{ userId?: number; organizationId?: number; sessionId?: string; source?: string }>(),
+  traceId: text("trace_id"),
   correlationId: text("correlation_id"),
   causationId: text("causation_id"),
   aggregateType: text("aggregate_type"),
@@ -65,6 +66,20 @@ export const eventProcessedTable = pgTable("event_processed", {
 }));
 
 export type EventProcessedRow = typeof eventProcessedTable.$inferSelect;
+
+/** Short-lived cross-worker claim table. A lease is reclaimed after a worker crash. */
+export const eventProcessingTable = pgTable("event_processing", {
+  id: serial("id").primaryKey(),
+  eventId: text("event_id").notNull(),
+  consumer: text("consumer").notNull(),
+  status: text("status").notNull().default("PROCESSING"),
+  lockedUntil: timestamp("locked_until").notNull(),
+  lockedBy: text("locked_by").notNull(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (t) => ({
+  eventConsumerUnique: unique().on(t.eventId, t.consumer),
+  claimIdx: index("idx_event_processing_claim").on(t.lockedUntil),
+}));
 
 export const eventDeadLetterTable = pgTable("event_dead_letter", {
   id: serial("id").primaryKey(),

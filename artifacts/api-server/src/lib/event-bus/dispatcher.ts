@@ -39,7 +39,7 @@ import { logger } from "../logger";
 import { logBus } from "../log-bus";
 import { getSubscribers } from "./subscriptions";
 import { isRegistered } from "./event-registry";
-import { hasProcessed, markProcessed } from "./idempotency";
+import { claimProcessing, hasProcessed, markProcessed, releaseProcessing } from "./idempotency";
 import { moveToDeadLetter } from "./dead-letter";
 import { nextAttemptDelayMs, shouldDeadLetter } from "./retry";
 import { recordDispatched, recordHandlerFailure, recordRetried, recordDeadLettered, recordUnknownType, recordHandlerLatency } from "./metrics";
@@ -65,6 +65,7 @@ function rowToEnvelope(row: typeof eventOutboxTable.$inferSelect): EventEnvelope
     occurredAt: row.occurredAt.toISOString(),
     publishedAt: row.publishedAt?.toISOString(),
     actor: (row.actor as EventEnvelope["actor"]) ?? undefined,
+    traceId: row.traceId ?? undefined,
     correlationId: row.correlationId ?? undefined,
     causationId: row.causationId ?? undefined,
     aggregate: row.aggregateType && row.aggregateId ? { type: row.aggregateType, id: row.aggregateId } : undefined,
@@ -125,6 +126,7 @@ async function dispatchRow(row: typeof eventOutboxTable.$inferSelect): Promise<v
     let handlerStartedAt: number | null = null;
     try {
       if (await hasProcessed(envelope.id, sub.consumer)) continue; // already handled by this consumer — skip, don't re-invoke
+      if (!(await claimProcessing(envelope.id, sub.consumer))) continue;
       // Part G1 — §39's `event_handler_latency`. Started just before the
       // handler call itself (not the hasProcessed() idempotency check
       // above, which is dedupe bookkeeping, not the handler's own work),
@@ -136,12 +138,14 @@ async function dispatchRow(row: typeof eventOutboxTable.$inferSelect): Promise<v
       await sub.handler(envelope);
       recordHandlerLatency(Date.now() - handlerStartedAt);
       await markProcessed(envelope.id, sub.consumer);
+      await releaseProcessing(envelope.id, sub.consumer);
       recordDispatched();
     } catch (err: any) {
       if (handlerStartedAt !== null) recordHandlerLatency(Date.now() - handlerStartedAt);
       const message = err?.message ?? String(err);
       errors.push(`[${sub.consumer}] ${message}`);
       logger.warn({ eventId: envelope.id, type: envelope.type, consumer: sub.consumer, err }, "Event Bus: subscriber handler failed");
+      await releaseProcessing(envelope.id, sub.consumer);
     }
   }
 

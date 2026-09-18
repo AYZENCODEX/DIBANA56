@@ -33,7 +33,7 @@ import { startEventBusDispatcher } from "./lib/event-bus";
 // Mega Engine — Phase 8 blueprint, Part B1: Scheduler core.
 import { startSchedulerWorker } from "./lib/scheduler";
 // Mega Engine — Phase 8 blueprint, Part E3: §60 Retention / §57-E cleanup.
-import { registerRetentionSweepSchedule } from "./lib/mega-engine";
+import { registerRetentionSweepSchedule, registerMegaEngineAuditIntegration } from "./lib/mega-engine";
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { MIGRATIONS } from "./lib/schema-migrations";
@@ -170,6 +170,7 @@ app.listen(port, (err) => {
   startBackchannelLogoutQueueWorker();
   startEventBusDispatcher();
   startSchedulerWorker();
+  registerMegaEngineAuditIntegration();
   // Mega Engine — Phase 8 blueprint, Part E3 (§57-E "cleanup" / §60
   // Retention). Registers the retention-sweep job handler and, if no
   // prior boot already scheduled it, its daily recurring job — must run

@@ -22,6 +22,7 @@ export const WORKFLOW_RESUME_JOB_TYPE = "workflow.resume";
 
 export interface WorkflowResumeJobPayload {
   runId: string;
+  traceId?: string;
 }
 
 /** §29 "Workflow wakeup" — `workflowRunId + resumeAt`, exactly this call's two real arguments. `correlationId: runId` lets this job's own scheduler.job.* lifecycle events (worker.ts's §35 wiring) be traced back to the run they belong to without inspecting payload. */
@@ -30,6 +31,22 @@ export async function scheduleWorkflowResume(runId: string, resumeAt: Date): Pro
     jobType: WORKFLOW_RESUME_JOB_TYPE,
     runAt: resumeAt,
     payload: { runId },
+    idempotencyKey: `workflow.resume:${runId}:${resumeAt.toISOString()}`,
     correlationId: runId,
+    traceId: runId,
+  });
+}
+
+export const WORKFLOW_COMPENSATE_JOB_TYPE = "workflow.compensate";
+
+export async function scheduleWorkflowCompensation(runId: string, delayMs = 0, traceId?: string): Promise<{ id: string }> {
+  return scheduleJob({
+    jobType: WORKFLOW_COMPENSATE_JOB_TYPE,
+    runAt: new Date(Date.now() + Math.max(0, delayMs)),
+    payload: { runId, traceId },
+    idempotencyKey: `workflow.compensate:${runId}:${Date.now() + Math.max(0, delayMs)}`,
+    correlationId: runId,
+    traceId: traceId ?? runId,
+    maxAttempts: 1,
   });
 }

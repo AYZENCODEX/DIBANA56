@@ -27,6 +27,8 @@ import { registerEvent, publishEvent } from "../event-bus";
 import { cancelJobsForCorrelation } from "../scheduler";
 import { WORKFLOW_RESUME_JOB_TYPE } from "./scheduler-integration";
 import type { StartWorkflowRunParams, WorkflowContext, WorkflowRun, WorkflowRunStatus, WorkflowStepRun, WorkflowStepRunStatus } from "./types";
+import type { CompensationState } from "./engine-types";
+import { ensureTraceId } from "../trace-context";
 
 type DbTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -73,6 +75,18 @@ registerEvent({
   // supplies one.
   schema: z.object({ runId: z.string(), definitionId: z.string(), definitionVersion: z.number(), lastError: z.string().optional() }),
 });
+registerEvent({
+  type: "workflow.cancelled",
+  version: 1,
+  owner: "workflow",
+  schema: z.object({ runId: z.string(), definitionId: z.string(), definitionVersion: z.number(), lastError: z.string().optional() }),
+});
+registerEvent({
+  type: "workflow.timed_out",
+  version: 1,
+  owner: "workflow",
+  schema: z.object({ runId: z.string(), definitionId: z.string(), definitionVersion: z.number(), lastError: z.string().optional() }),
+});
 
 export class DefinitionNotFoundError extends Error {
   constructor(workflowId: string, version?: number) {
@@ -89,6 +103,7 @@ function rowToRun(row: typeof workflowRunTable.$inferSelect): WorkflowRun {
     status: row.status as WorkflowRunStatus,
     currentStepId: row.currentStepId ?? undefined,
     context: row.context as WorkflowContext,
+    traceId: row.traceId ?? undefined,
     correlationId: row.correlationId ?? undefined,
     causationId: row.causationId ?? undefined,
     maxRuntimeMs: row.maxRuntimeMs ?? undefined,
@@ -96,6 +111,9 @@ function rowToRun(row: typeof workflowRunTable.$inferSelect): WorkflowRun {
     startedAt: row.startedAt ?? undefined,
     completedAt: row.completedAt ?? undefined,
     nextResumeAt: row.nextResumeAt ?? undefined,
+    compensationState: row.compensationState ?? undefined,
+    compensationAttempts: row.compensationAttempts,
+    maxCompensationAttempts: row.maxCompensationAttempts,
     createdAt: row.createdAt,
   };
 }
@@ -144,6 +162,7 @@ export async function startRun(params: StartWorkflowRunParams, tx?: DbTx): Promi
       status: "PENDING",
       currentStepId: firstStep.id,
       context: (params.context ?? {}) as Record<string, unknown>,
+      traceId: ensureTraceId(params.traceId, params.correlationId),
       correlationId: params.correlationId,
       causationId: params.causationId,
       maxRuntimeMs: def.maxRuntimeMs,
@@ -221,6 +240,7 @@ export async function startRun(params: StartWorkflowRunParams, tx?: DbTx): Promi
       payload: { runId: id, definitionId: def.id, definitionVersion: def.version },
       correlationId: params.correlationId,
       causationId: params.causationId,
+      traceId: ensureTraceId(params.traceId, params.correlationId),
     },
     tx,
   );
@@ -356,6 +376,7 @@ export async function transitionRun(
       {
         type: "workflow.completed",
         payload: { runId: id, definitionId: current.definitionId, definitionVersion: current.definitionVersion },
+        traceId: current.traceId,
         correlationId: current.correlationId,
         causationId: id,
       },
@@ -366,12 +387,39 @@ export async function transitionRun(
       {
         type: "workflow.failed",
         payload: { runId: id, definitionId: current.definitionId, definitionVersion: current.definitionVersion, lastError: patch?.lastError },
+        traceId: current.traceId,
+        correlationId: current.correlationId,
+        causationId: id,
+      },
+      tx,
+    );
+  } else if (to === "CANCELLED" || to === "TIMED_OUT") {
+    await publishEvent(
+      {
+        type: to === "CANCELLED" ? "workflow.cancelled" : "workflow.timed_out",
+        payload: { runId: id, definitionId: current.definitionId, definitionVersion: current.definitionVersion, lastError: patch?.lastError },
+        traceId: current.traceId,
         correlationId: current.correlationId,
         causationId: id,
       },
       tx,
     );
   }
+}
+
+export async function updateCompensationState(
+  runId: string,
+  state: CompensationState,
+  lastError?: string,
+  tx?: DbTx,
+): Promise<void> {
+  const executor = tx ?? db;
+  await executor.update(workflowRunTable).set({
+    compensationState: state as unknown as Record<string, unknown>,
+    compensationAttempts: state.attempts,
+    ...(lastError === undefined ? {} : { lastError }),
+    updatedAt: new Date(),
+  }).where(eq(workflowRunTable.id, runId));
 }
 
 /** Same §17-checked pattern as transitionRun(), for one step-run row. */

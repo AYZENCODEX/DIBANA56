@@ -18,6 +18,8 @@ export type {
 export {
   getEventBusHealth, getSchedulerHealth, getWorkflowHealth, getEngineHealth,
 } from "./engine-health";
+export { writeEngineAudit } from "./audit";
+export { registerMegaEngineAuditIntegration } from "./audit-integration";
 
 // Part E3 — §60 Retention / §57-E "cleanup".
 export type { RetentionSweepResult } from "./retention";

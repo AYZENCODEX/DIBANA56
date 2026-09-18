@@ -31,6 +31,8 @@ export interface ScheduledJob<T = unknown> {
   runAt: Date;
   status: JobStatus;
   payload?: T;
+  idempotencyKey?: string;
+  traceId?: string;
   correlationId?: string;
   /** Part H3 — the event id that caused this job to be scheduled, when applicable (e.g. a "delayed" workflow trigger's anchor event id). Only meaningful for scheduleJob()/scheduleDelayed() — ScheduleCronParams/ScheduleRecurringParams below have no equivalent field, since a recurring/cron schedule isn't "caused by" a single event the way a one-time delayed job can be. */
   causationId?: string;
@@ -52,10 +54,18 @@ export interface ScheduleJobParams<T = unknown> {
   jobType: string;
   runAt: Date;
   payload?: T;
+  /** Stable key for the logical job. Duplicate inserts with the same key return the existing job. */
+  idempotencyKey?: string;
+  traceId?: string;
   correlationId?: string;
   /** Part H3 — see ScheduledJob.causationId's own doc comment; when set, backed by migration 115's UNIQUE(job_type, causation_id) partial index (job-store.ts's scheduleJob() catches that constraint's violation and returns the already-scheduled job instead of throwing). */
   causationId?: string;
   maxAttempts?: number; // defaults to the registered handler's own default, else 5
+  /** Internal/shared persistence fields used by recurring schedule helpers. */
+  cron?: string;
+  timezone?: string;
+  intervalMs?: number;
+  misfirePolicy?: MisfirePolicy;
 }
 
 /** §29 "Cron" + §32 "Timezone" — Part B2. `startAt` (default: now) is the instant the first occurrence is computed after, not the first occurrence itself — pass a future instant to delay a recurring schedule's start. */
@@ -64,6 +74,8 @@ export interface ScheduleCronParams<T = unknown> {
   cron: string;
   timezone: string;
   payload?: T;
+  idempotencyKey?: string;
+  traceId?: string;
   correlationId?: string;
   maxAttempts?: number;
   /** §31 — defaults to RUN_ONCE. */
@@ -76,6 +88,8 @@ export interface ScheduleRecurringParams<T = unknown> {
   jobType: string;
   intervalMs: number;
   payload?: T;
+  idempotencyKey?: string;
+  traceId?: string;
   correlationId?: string;
   maxAttempts?: number;
   /** §31 — defaults to RUN_ONCE. */

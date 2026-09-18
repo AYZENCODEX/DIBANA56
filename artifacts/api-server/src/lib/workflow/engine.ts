@@ -39,14 +39,14 @@
  * WaitForResume from a handler reuses it with `current_step_id` advanced
  * to that step's `onSuccess`. See parkForWait()'s own doc comment.
  */
-import { getRun, getStepRuns, transitionRun, transitionStepRun, insertStepRetry, advanceCurrentStep, getPendingStepRun, DefinitionNotFoundError } from "./run-store";
+import { getRun, getStepRuns, transitionRun, transitionStepRun, insertStepRetry, advanceCurrentStep, getPendingStepRun, DefinitionNotFoundError, updateCompensationState } from "./run-store";
 import { getDefinition } from "./definition-store";
 import { getAllVariables, setVariable, recordCheckpoint } from "./context";
 import { evaluateCondition } from "./conditions";
 import { dispatchAction, WaitForResume, WorkflowActionDeniedError } from "./actions";
 import { authorizeWorkflowAction } from "./authorization";
 import { runCompensation } from "./compensation";
-import { scheduleWorkflowResume } from "./scheduler-integration";
+import { scheduleWorkflowResume, scheduleWorkflowCompensation } from "./scheduler-integration";
 import { nextAttemptDelayMs } from "../scheduler";
 import { UnsafeVariableKeyError } from "./context";
 import { logger } from "../logger";
@@ -280,14 +280,51 @@ async function failOrCompensate(run: WorkflowRun, definition: WorkflowDefinition
   }
 
   await transitionRun(run.id, "COMPENSATING", { lastError });
-  const runAtCompensationStart = (await getRun(run.id))!;
+  await scheduleWorkflowCompensation(run.id, 0, run.traceId);
+  await resumeCompensation(run.id, definition, env);
+}
+
+export async function resumeCompensation(runId: string, definition?: WorkflowDefinition, env: WorkflowRuntimeEnv = {}): Promise<void> {
+  const current = await getRun(runId);
+  if (!current || current.status !== "COMPENSATING") return;
+  const resolvedDefinition = definition ?? await getDefinition(current.definitionId, current.definitionVersion);
+  if (!resolvedDefinition) throw new DefinitionNotFoundError(current.definitionId, current.definitionVersion);
+  const attempts = current.compensationAttempts + 1;
+  if (attempts > current.maxCompensationAttempts) {
+    await transitionRun(runId, "DEAD_LETTER", { lastError: `maximum compensation attempts (${current.maxCompensationAttempts}) exceeded` });
+    return;
+  }
+  await updateCompensationState(runId, {
+    completedStepIds: ((current.compensationState as { completedStepIds?: string[] } | undefined)?.completedStepIds ?? []),
+    attempts,
+  });
+  const attempted = (await getRun(runId))!;
   try {
-    const result = await runCompensation(runAtCompensationStart, definition, (r, s, a) => runStep(r, s, a, env));
-    await transitionRun(run.id, result.ok ? "COMPENSATED" : "DEAD_LETTER", {
-      lastError: result.ok ? lastError : `compensation failed at step "${result.failedAt}": ${result.error}`,
-    });
+    const result = await runCompensation(attempted, resolvedDefinition, (r, s, a) => runStep(r, s, a, env));
+    if (result.ok) {
+      await transitionRun(runId, "COMPENSATED");
+    } else if (attempts < attempted.maxCompensationAttempts) {
+      await updateCompensationState(runId, {
+        completedStepIds: ((attempted.compensationState as { completedStepIds?: string[] } | undefined)?.completedStepIds ?? []),
+        attempts,
+        lastError: `compensation failed at step "${result.failedAt}": ${result.error}`,
+      }, `compensation failed at step "${result.failedAt}": ${result.error}`);
+      await scheduleWorkflowCompensation(runId, nextAttemptDelayMs(attempts), attempted.traceId);
+    } else {
+      await transitionRun(runId, "DEAD_LETTER", { lastError: `compensation failed at step "${result.failedAt}": ${result.error}` });
+    }
   } catch (err) {
-    await transitionRun(run.id, "DEAD_LETTER", { lastError: err instanceof Error ? err.message : String(err) });
+    const message = err instanceof Error ? err.message : String(err);
+    if (attempts < attempted.maxCompensationAttempts) {
+      await updateCompensationState(runId, {
+        completedStepIds: ((attempted.compensationState as { completedStepIds?: string[] } | undefined)?.completedStepIds ?? []),
+        attempts,
+        lastError: message,
+      }, message);
+      await scheduleWorkflowCompensation(runId, nextAttemptDelayMs(attempts), attempted.traceId);
+    } else {
+      await transitionRun(runId, "DEAD_LETTER", { lastError: message });
+    }
   }
 }
 

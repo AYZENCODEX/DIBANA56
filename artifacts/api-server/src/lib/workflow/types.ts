@@ -125,6 +125,7 @@ export interface WorkflowRun {
   status: WorkflowRunStatus;
   currentStepId?: string;
   context: WorkflowContext;
+  traceId?: string;
   correlationId?: string;
   causationId?: string;
   maxRuntimeMs?: number;
@@ -132,6 +133,9 @@ export interface WorkflowRun {
   startedAt?: Date;
   completedAt?: Date;
   nextResumeAt?: Date;
+  compensationState?: Record<string, unknown>;
+  compensationAttempts: number;
+  maxCompensationAttempts: number;
   createdAt: Date;
 }
 
@@ -156,6 +160,7 @@ export interface StartWorkflowRunParams {
   definitionId: string;
   definitionVersion?: number;
   context?: WorkflowContext;
+  traceId?: string;
   correlationId?: string;
   causationId?: string;
 }

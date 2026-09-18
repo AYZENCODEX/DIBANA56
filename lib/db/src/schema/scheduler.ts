@@ -28,6 +28,8 @@ export const scheduledJobTable = pgTable("scheduled_job", {
   status: text("status").notNull().default("SCHEDULED"),
 
   payload: jsonb("payload").$type<Record<string, unknown>>(),
+  idempotencyKey: text("idempotency_key"),
+  traceId: text("trace_id"),
   correlationId: text("correlation_id"),
   // Part H3 (migration 115) — the event id that caused this job to be
   // scheduled, when applicable. See that migration's own header for the

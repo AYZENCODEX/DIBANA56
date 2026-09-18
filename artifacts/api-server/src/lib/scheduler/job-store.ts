@@ -20,6 +20,7 @@ import { warnIfUnregistered, defaultMaxAttemptsFor } from "./job-registry";
 import { recordJobScheduled } from "./metrics";
 import { parseCron, nextCronOccurrence } from "./cron-parser";
 import type { ScheduleJobParams, ScheduleCronParams, ScheduleRecurringParams, ScheduledJob } from "./types";
+import { ensureTraceId, stableSerialize } from "../trace-context";
 
 // Same shape as db.transaction(async (tx) => ...)'s callback param — see
 // event-bus/publisher.ts's identical DbTx alias for why.
@@ -44,6 +45,9 @@ type DbTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 export async function scheduleJob<T = unknown>(params: ScheduleJobParams<T>, tx?: DbTx): Promise<{ id: string }> {
   warnIfUnregistered(params.jobType);
   const id = crypto.randomUUID();
+  const idempotencyKey = params.idempotencyKey
+    ?? `job:${params.jobType}:${params.causationId ?? ""}:${params.runAt.toISOString()}:${stableSerialize(params.payload)}`;
+  const traceId = ensureTraceId(params.traceId, params.correlationId);
   const executor = tx ?? db;
 
   // Part H3 (migration 115) — deliberately NOT wrapped in a try/catch
@@ -66,15 +70,30 @@ export async function scheduleJob<T = unknown>(params: ScheduleJobParams<T>, tx?
   // caller today) is the one place that actually knows how to interpret
   // its own payload shape, so it's the right place to decide the
   // violation is benign — see that file's own updated catch block.
-  await executor.insert(scheduledJobTable).values({
-    id,
-    jobType: params.jobType,
-    runAt: params.runAt,
-    payload: params.payload as Record<string, unknown> | undefined,
-    correlationId: params.correlationId,
-    causationId: params.causationId,
-    maxAttempts: params.maxAttempts ?? defaultMaxAttemptsFor(params.jobType),
-  });
+  try {
+    await executor.insert(scheduledJobTable).values({
+      id,
+      jobType: params.jobType,
+      runAt: params.runAt,
+      payload: params.payload as Record<string, unknown> | undefined,
+      cron: params.cron,
+      timezone: params.timezone,
+      intervalMs: params.intervalMs,
+      misfirePolicy: params.misfirePolicy,
+      idempotencyKey,
+      traceId,
+      correlationId: params.correlationId,
+      causationId: params.causationId,
+      maxAttempts: params.maxAttempts ?? defaultMaxAttemptsFor(params.jobType),
+    });
+  } catch (err: any) {
+    if (err?.code === "23505" || /duplicate key/i.test(String(err?.message ?? ""))) {
+      const [existing] = await db.select({ id: scheduledJobTable.id }).from(scheduledJobTable)
+        .where(eq(scheduledJobTable.idempotencyKey, idempotencyKey)).limit(1);
+      if (existing) return { id: existing.id };
+    }
+    throw err;
+  }
 
   recordJobScheduled();
   return { id };
@@ -85,7 +104,7 @@ export async function scheduleDelayed<T = unknown>(
   jobType: string,
   delayMs: number,
   payload?: T,
-  opts?: { correlationId?: string; causationId?: string; maxAttempts?: number },
+  opts?: { idempotencyKey?: string; traceId?: string; correlationId?: string; causationId?: string; maxAttempts?: number },
   tx?: DbTx,
 ): Promise<{ id: string }> {
   return scheduleJob({ jobType, runAt: new Date(Date.now() + Math.max(0, delayMs)), payload, ...opts }, tx);
@@ -109,24 +128,15 @@ export async function scheduleCron<T = unknown>(params: ScheduleCronParams<T>, t
   parseCron(params.cron); // fail fast on malformed syntax
   new Intl.DateTimeFormat("en-US", { timeZone: params.timezone }); // throws RangeError on an unrecognized IANA identifier — fail fast here too, not at first dispatch
 
-  const id = crypto.randomUUID();
   const runAt = nextCronOccurrence(params.cron, params.timezone, params.startAt ?? new Date());
-  const executor = tx ?? db;
-
-  await executor.insert(scheduledJobTable).values({
-    id,
-    jobType: params.jobType,
+  return scheduleJob({
+    ...params,
     runAt,
     cron: params.cron,
     timezone: params.timezone,
     misfirePolicy: params.misfirePolicy ?? "RUN_ONCE",
-    payload: params.payload as Record<string, unknown> | undefined,
-    correlationId: params.correlationId,
-    maxAttempts: params.maxAttempts ?? defaultMaxAttemptsFor(params.jobType),
-  });
-
-  recordJobScheduled();
-  return { id };
+    idempotencyKey: params.idempotencyKey ?? `cron:${params.jobType}:${stableSerialize(params.payload)}`,
+  }, tx);
 }
 
 /**
@@ -140,23 +150,15 @@ export async function scheduleRecurring<T = unknown>(params: ScheduleRecurringPa
   warnIfUnregistered(params.jobType);
   if (!(params.intervalMs > 0)) throw new Error("scheduleRecurring: intervalMs must be positive");
 
-  const id = crypto.randomUUID();
   const runAt = params.startAt ?? new Date(Date.now() + params.intervalMs);
-  const executor = tx ?? db;
-
-  await executor.insert(scheduledJobTable).values({
-    id,
-    jobType: params.jobType,
+  const result = await scheduleJob({
+    ...params,
     runAt,
     intervalMs: params.intervalMs,
     misfirePolicy: params.misfirePolicy ?? "RUN_ONCE",
-    payload: params.payload as Record<string, unknown> | undefined,
-    correlationId: params.correlationId,
-    maxAttempts: params.maxAttempts ?? defaultMaxAttemptsFor(params.jobType),
-  });
-
-  recordJobScheduled();
-  return { id };
+    idempotencyKey: params.idempotencyKey ?? `interval:${params.jobType}:${stableSerialize(params.payload)}`,
+  }, tx);
+  return result;
 }
 
 function rowToJob(row: typeof scheduledJobTable.$inferSelect): ScheduledJob {
@@ -166,6 +168,8 @@ function rowToJob(row: typeof scheduledJobTable.$inferSelect): ScheduledJob {
     runAt: row.runAt,
     status: row.status as ScheduledJob["status"],
     payload: row.payload,
+    idempotencyKey: row.idempotencyKey ?? undefined,
+    traceId: row.traceId ?? undefined,
     correlationId: row.correlationId ?? undefined,
     causationId: row.causationId ?? undefined,
     attempts: row.attempts,

@@ -7,8 +7,9 @@
  * it centrally: a (event_id, consumer) pair recorded here is never
  * dispatched to that consumer's handler again, full stop.
  */
-import { db, eventProcessedTable } from "@workspace/db";
-import { and, eq } from "drizzle-orm";
+import crypto from "crypto";
+import { db, eventProcessedTable, eventProcessingTable } from "@workspace/db";
+import { and, eq, lt, sql } from "drizzle-orm";
 
 export async function hasProcessed(eventId: string, consumer: string): Promise<boolean> {
   const [row] = await db.select({ id: eventProcessedTable.id }).from(eventProcessedTable)
@@ -32,4 +33,36 @@ export async function markProcessed(eventId: string, consumer: string): Promise<
     const isUniqueViolation = err?.code === "23505" || /duplicate key/i.test(String(err?.message ?? ""));
     if (!isUniqueViolation) throw err;
   }
+}
+
+/** Claims the (event, consumer) pair before handler execution. This closes the
+ * race where two workers both read "not processed" before either succeeds. */
+export async function claimProcessing(eventId: string, consumer: string, leaseMs = 120_000): Promise<boolean> {
+  const now = new Date();
+  const lockedUntil = new Date(now.getTime() + leaseMs);
+  const lockedBy = `${process.pid}-${crypto.randomUUID().slice(0, 8)}`;
+  try {
+    const inserted = await db.insert(eventProcessingTable).values({
+      eventId, consumer, lockedUntil, lockedBy, status: "PROCESSING",
+    }).onConflictDoNothing().returning({ id: eventProcessingTable.id });
+    if (inserted.length) return true;
+  } catch (err) {
+    if (!((err as { code?: string })?.code === "23505")) throw err;
+  }
+
+  const reclaimed = await db.update(eventProcessingTable).set({
+    status: "PROCESSING", lockedUntil, lockedBy, updatedAt: now,
+  }).where(and(
+    eq(eventProcessingTable.eventId, eventId),
+    eq(eventProcessingTable.consumer, consumer),
+    lt(eventProcessingTable.lockedUntil, now),
+  )).returning({ id: eventProcessingTable.id });
+  return reclaimed.length > 0;
+}
+
+export async function releaseProcessing(eventId: string, consumer: string): Promise<void> {
+  await db.delete(eventProcessingTable).where(and(
+    eq(eventProcessingTable.eventId, eventId),
+    eq(eventProcessingTable.consumer, consumer),
+  ));
 }

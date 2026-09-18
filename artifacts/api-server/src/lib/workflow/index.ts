@@ -37,6 +37,7 @@ export {
 export {
   DefinitionNotFoundError, startRun, getRun, listRuns, getStepRuns, getPendingStepRun,
   transitionRun, transitionStepRun, insertStepRetry, advanceCurrentStep, cancelRun,
+  updateCompensationState,
 } from "./run-store";
 
 export {
@@ -71,9 +72,9 @@ export type { RunStepFn, RunStepOutcome } from "./engine-types";
 
 // Part C2 — the execution loop itself (§20/§21/§22/§24/§25 wired
 // together), and §24's scheduler-side wakeup.
-export { runStep, executeRun, resumeRun } from "./engine";
+export { runStep, executeRun, resumeRun, resumeCompensation } from "./engine";
 export type { WorkflowRuntimeEnv } from "./engine";
-export { WORKFLOW_RESUME_JOB_TYPE, scheduleWorkflowResume } from "./scheduler-integration";
+export { WORKFLOW_RESUME_JOB_TYPE, WORKFLOW_COMPENSATE_JOB_TYPE, scheduleWorkflowResume, scheduleWorkflowCompensation } from "./scheduler-integration";
 export type { WorkflowResumeJobPayload } from "./scheduler-integration";
 export { registerWorkflowResumeHandler } from "./scheduler-handler";
 

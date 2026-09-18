@@ -99,6 +99,9 @@ function rowToJob(row: typeof scheduledJobTable.$inferSelect): ScheduledJob {
     runAt: row.runAt,
     status: row.status as ScheduledJob["status"],
     payload: row.payload,
+    idempotencyKey: row.idempotencyKey ?? undefined,
+    traceId: row.traceId ?? undefined,
+    causationId: row.causationId ?? undefined,
     correlationId: row.correlationId ?? undefined,
     attempts: row.attempts,
     maxAttempts: row.maxAttempts,
@@ -220,7 +223,7 @@ async function dispatchJob(row: typeof scheduledJobTable.$inferSelect): Promise<
     if (succeeded) {
       await trx.update(scheduledJobTable).set({ status: "COMPLETED", attempts: attemptNumber, lastError: null, lockedBy: null, lockedUntil: null, updatedAt: new Date() })
         .where(sql`${scheduledJobTable.id} = ${job.id}`);
-      await publishEvent({ type: "scheduler.job.completed", payload: { jobId: job.id, jobType: job.jobType }, correlationId: job.correlationId, causationId: job.correlationId }, trx);
+      await publishEvent({ type: "scheduler.job.completed", payload: { jobId: job.id, jobType: job.jobType }, traceId: job.traceId, correlationId: job.correlationId, causationId: job.causationId ?? job.correlationId }, trx);
       recordJobExecuted();
       return;
     }
@@ -228,7 +231,7 @@ async function dispatchJob(row: typeof scheduledJobTable.$inferSelect): Promise<
     if (willDeadLetter) {
       await trx.update(scheduledJobTable).set({ status: "DEAD_LETTER", attempts: attemptNumber, lastError: errorMessage, lockedBy: null, lockedUntil: null, updatedAt: new Date() })
         .where(sql`${scheduledJobTable.id} = ${job.id}`);
-      await publishEvent({ type: "scheduler.job.deadlettered", payload: { jobId: job.id, jobType: job.jobType, attempts: attemptNumber }, correlationId: job.correlationId }, trx);
+      await publishEvent({ type: "scheduler.job.deadlettered", payload: { jobId: job.id, jobType: job.jobType, attempts: attemptNumber }, traceId: job.traceId, correlationId: job.correlationId, causationId: job.causationId }, trx);
       recordJobFailed();
       recordJobDeadLettered();
       // moveToDeadLetter does its own insert with unique-violation swallowing; run after the tx commits rather than inside it, since a duplicate-key retry there shouldn't roll back the job-state update above.
@@ -240,7 +243,7 @@ async function dispatchJob(row: typeof scheduledJobTable.$inferSelect): Promise<
       status: "RETRYING", attempts: attemptNumber, lastError: errorMessage,
       runAt: new Date(Date.now() + delay), lockedBy: null, lockedUntil: null, updatedAt: new Date(),
     }).where(sql`${scheduledJobTable.id} = ${job.id}`);
-    await publishEvent({ type: "scheduler.job.failed", payload: { jobId: job.id, jobType: job.jobType, attempts: attemptNumber, lastError: errorMessage ?? "", willRetry: true }, correlationId: job.correlationId }, trx);
+     await publishEvent({ type: "scheduler.job.failed", payload: { jobId: job.id, jobType: job.jobType, attempts: attemptNumber, lastError: errorMessage ?? "", willRetry: true }, traceId: job.traceId, correlationId: job.correlationId, causationId: job.causationId }, trx);
     recordJobFailed();
     recordJobRetried();
   });
@@ -328,7 +331,7 @@ async function dispatchRecurringJob(job: ScheduledJob, schedule: Schedule): Prom
     if (succeeded) {
       await trx.update(scheduledJobTable).set({ status: "SCHEDULED", runAt: plan.nextRunAt, attempts: 0, lastError: null, lockedBy: null, lockedUntil: null, updatedAt: new Date() })
         .where(sql`${scheduledJobTable.id} = ${job.id}`);
-      await publishEvent({ type: "scheduler.job.completed", payload: { jobId: job.id, jobType: job.jobType, occurrences: executed, missed: plan.missedCount }, correlationId: job.correlationId, causationId: job.correlationId }, trx);
+       await publishEvent({ type: "scheduler.job.completed", payload: { jobId: job.id, jobType: job.jobType, occurrences: executed, missed: plan.missedCount }, traceId: job.traceId, correlationId: job.correlationId, causationId: job.causationId ?? job.correlationId }, trx);
       recordJobExecuted();
       return;
     }
@@ -337,7 +340,7 @@ async function dispatchRecurringJob(job: ScheduledJob, schedule: Schedule): Prom
       // This occurrence is dead-lettered, but the SCHEDULE lives on — see this function's header.
       await trx.update(scheduledJobTable).set({ status: "SCHEDULED", runAt: plan.nextRunAt, attempts: 0, lastError: errorMessage, lockedBy: null, lockedUntil: null, updatedAt: new Date() })
         .where(sql`${scheduledJobTable.id} = ${job.id}`);
-      await publishEvent({ type: "scheduler.job.deadlettered", payload: { jobId: job.id, jobType: job.jobType, attempts: attemptNumber, missed: plan.missedCount }, correlationId: job.correlationId }, trx);
+       await publishEvent({ type: "scheduler.job.deadlettered", payload: { jobId: job.id, jobType: job.jobType, attempts: attemptNumber, missed: plan.missedCount }, traceId: job.traceId, correlationId: job.correlationId, causationId: job.causationId }, trx);
       recordJobFailed();
       recordJobDeadLettered();
       // moveToDeadLetter runs after the tx commits (below) — same reasoning as dispatchJob()'s own comment: a duplicate-key retry there shouldn't roll back the job-state update above.
@@ -349,7 +352,7 @@ async function dispatchRecurringJob(job: ScheduledJob, schedule: Schedule): Prom
       status: "RETRYING", attempts: attemptNumber, lastError: errorMessage,
       runAt: new Date(Date.now() + delay), lockedBy: null, lockedUntil: null, updatedAt: new Date(),
     }).where(sql`${scheduledJobTable.id} = ${job.id}`);
-    await publishEvent({ type: "scheduler.job.failed", payload: { jobId: job.id, jobType: job.jobType, attempts: attemptNumber, lastError: errorMessage ?? "", willRetry: true }, correlationId: job.correlationId }, trx);
+     await publishEvent({ type: "scheduler.job.failed", payload: { jobId: job.id, jobType: job.jobType, attempts: attemptNumber, lastError: errorMessage ?? "", willRetry: true }, traceId: job.traceId, correlationId: job.correlationId, causationId: job.causationId }, trx);
     recordJobFailed();
     recordJobRetried();
   });
