@@ -100,11 +100,19 @@ export async function runCompensation(run: WorkflowRun, definition: WorkflowDefi
     let outcome;
     let attempt = Math.max(0, ...priorCompensationRuns.map((s) => s.attempt)) + 1;
     do {
+      state.inProgressStepId = stepRun.stepId;
+      state.inProgressCompensationStepId = compensationStepId;
+      state.lastError = undefined;
+      await updateCompensationState(run.id, state);
       await insertStepRetry(run.id, compensationStepId, attempt, compensationStep.input);
       outcome = await runStep(run, compensationStep, attempt);
       if (outcome.ok) break;
       if (outcome.retryable === false || attempt >= maxAttempts) {
         state.lastError = outcome.error;
+        state.failedStepId = stepRun.stepId;
+        state.retryable = outcome.retryable !== false;
+        state.inProgressStepId = undefined;
+        state.inProgressCompensationStepId = undefined;
         await updateCompensationState(run.id, state, state.lastError);
         return { ok: false, compensated, failedAt: compensationStepId, error: outcome.error };
       }
@@ -115,6 +123,10 @@ export async function runCompensation(run: WorkflowRun, definition: WorkflowDefi
     // Persist the ORIGINAL forward step id. On resume this is what prevents
     // the same reversible effect from being compensated twice.
     state.completedStepIds.push(stepRun.stepId);
+    state.inProgressStepId = undefined;
+    state.inProgressCompensationStepId = undefined;
+    state.failedStepId = undefined;
+    state.retryable = undefined;
     await updateCompensationState(run.id, state);
   }
 

@@ -13,6 +13,7 @@ import type { LatencySnapshot } from "../latency-histogram";
 /** §28 — the full status lifecycle. B1's worker only ever writes a subset (see worker.ts); READY and CANCELLED are here for completeness/API surface even though B1 has no cancel endpoint yet. */
 export type JobStatus =
   | "SCHEDULED"
+  | "PAUSED"
   | "READY"
   | "RUNNING"
   | "RETRYING"

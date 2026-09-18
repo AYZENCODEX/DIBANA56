@@ -37,7 +37,7 @@ export {
 export {
   DefinitionNotFoundError, startRun, getRun, listRuns, getStepRuns, getPendingStepRun,
   transitionRun, transitionStepRun, insertStepRetry, advanceCurrentStep, cancelRun,
-  updateCompensationState,
+  updateCompensationState, recoverExpiredRunLeases,
 } from "./run-store";
 
 export {

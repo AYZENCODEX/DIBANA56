@@ -20,12 +20,13 @@ export const scheduledJobTable = pgTable("scheduled_job", {
   intervalMs: bigint("interval_ms", { mode: "number" }), // §29 "Recurring" — fixed-period alternative to cron, grid-anchored at createdAt (B2)
   misfirePolicy: text("misfire_policy").notNull().default("RUN_ONCE"), // §31 — RUN_ONCE | SKIP | CATCH_UP | RESCHEDULE, only meaningful when cron or intervalMs is set (B2)
 
-  // SCHEDULED | RUNNING | RETRYING | COMPLETED | FAILED | CANCELLED | DEAD_LETTER
+  // SCHEDULED | PAUSED | RUNNING | RETRYING | COMPLETED | FAILED | CANCELLED | DEAD_LETTER
   // Plain TEXT, not a Postgres enum — same reasoning as event_outbox.status.
   // A recurring/cron job cycles SCHEDULED <-> RUNNING <-> RETRYING forever
   // (or until cancelJob()) and never settles into COMPLETED/DEAD_LETTER the
   // way a one-time job does — see worker.ts's dispatchRecurringJob().
   status: text("status").notNull().default("SCHEDULED"),
+  pauseReason: text("pause_reason"),
 
   payload: jsonb("payload").$type<Record<string, unknown>>(),
   idempotencyKey: text("idempotency_key"),

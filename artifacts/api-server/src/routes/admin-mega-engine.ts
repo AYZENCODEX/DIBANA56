@@ -50,7 +50,7 @@
 import { Router, type IRouter } from "express";
 import { requireDev } from "../middlewares/auth";
 import { logger } from "../lib/logger";
-import { getEngineHealth, RETENTION_WINDOWS_MS, runRetentionSweep } from "../lib/mega-engine";
+import { getEngineHealth, RETENTION_WINDOWS_MS, runRetentionSweep, getEngineLinks, writeEngineAudit } from "../lib/mega-engine";
 import {
   getWorkflowMetrics,
   listRuns, getRun, getStepRuns, cancelRun,
@@ -70,6 +70,7 @@ import {
   replayDeadLetter as replayJobDeadLetter,
   discardDeadLetter as discardJobDeadLetter,
   getJobsForCorrelation,
+  pauseJob, resumeJob,
 } from "../lib/scheduler";
 
 const router: IRouter = Router();
@@ -106,6 +107,16 @@ router.get("/admin/mega-engine/metrics", requireDev, (_req, res): void => {
     scheduler: getSchedulerMetrics(),
     workflow: getWorkflowMetrics(),
   });
+});
+
+// ── GET /admin/mega-engine/links/:correlationId — cross-engine trace view ──
+router.get("/admin/mega-engine/links/:correlationId", requireDev, async (req, res): Promise<void> => {
+  const correlationId = req.params.correlationId.trim();
+  if (!correlationId || correlationId.length > 256) {
+    res.status(400).json({ error: "Invalid correlation id", code: "INVALID_CORRELATION_ID" });
+    return;
+  }
+  res.json(await getEngineLinks(correlationId));
 });
 
 // ── GET /admin/mega-engine/dead-letters/:engine — list, optional ?status=/?type= filter ──
@@ -236,9 +247,30 @@ router.post("/admin/mega-engine/workflow/runs/:id/cancel", requireDev, async (re
   // silent no-op rather than an error — same "only mutate it if it's
   // still safe to" posture the dead-letter discard routes above already
   // rely on, so `cancelled: false` here means exactly that, not a fault.
-  const cancelled = await cancelRun(req.params.id);
+  const reason = typeof req.body?.reason === "string" ? req.body.reason.slice(0, 500) : undefined;
+  const cancelled = await cancelRun(req.params.id, { reason, actorUserId: req.user?.userId });
+  if (cancelled) {
+    await writeEngineAudit({
+      action: "workflow.cancelled.admin",
+      metadata: { runId: req.params.id, reason: reason ?? "Cancelled by operator" },
+    });
+  }
   logger.info({ runId: req.params.id, cancelled, actorId: req.user?.userId }, "mega_engine.workflow_run.admin_cancelled");
   res.json({ runId: req.params.id, cancelled });
+});
+
+// ── Scheduler operator controls (J10) ──────────────────────────────────────
+router.post("/admin/mega-engine/jobs/:id/pause", requireDev, async (req, res): Promise<void> => {
+  const reason = typeof req.body?.reason === "string" ? req.body.reason.slice(0, 500) : "Paused by operator";
+  const paused = await pauseJob(req.params.id, reason);
+  if (paused) await writeEngineAudit({ action: "job.paused.admin", metadata: { jobId: req.params.id, reason } });
+  res.json({ jobId: req.params.id, paused });
+});
+
+router.post("/admin/mega-engine/jobs/:id/resume", requireDev, async (req, res): Promise<void> => {
+  const resumed = await resumeJob(req.params.id);
+  if (resumed) await writeEngineAudit({ action: "job.resumed.admin", metadata: { jobId: req.params.id } });
+  res.json({ jobId: req.params.id, resumed });
 });
 
 // ── POST /admin/mega-engine/workflow/runs/:id/replay — §58 "workflow replay" ──

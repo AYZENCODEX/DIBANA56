@@ -85,7 +85,7 @@ registerEvent({
 });
 
 const WORKER_ID = `${process.pid}-${crypto.randomUUID().slice(0, 8)}`;
-const CLAIM_BATCH_SIZE = 25;
+const CLAIM_BATCH_SIZE = Math.max(1, Number(process.env.ENGINE_SCHEDULER_BATCH_SIZE ?? 25));
 
 // How long a claimed job's lease is valid for before it's considered
 // abandoned (§30: "If a worker dies: lease expires -> job becomes
@@ -364,6 +364,8 @@ async function dispatchRecurringJob(job: ScheduledJob, schedule: Schedule): Prom
 
 /** One worker tick: claim a batch, dispatch each row sequentially. Exposed for tests/manual triggering. */
 export async function runSchedulerSweep(): Promise<{ claimed: number }> {
+  if (sweepInFlight) return { claimed: 0 };
+  sweepInFlight = true;
   recordWorkerSweepStart();
   try {
     await recoverExpiredLeases();
@@ -382,6 +384,7 @@ export async function runSchedulerSweep(): Promise<{ claimed: number }> {
     throw err;
   } finally {
     recordWorkerSweepEnd();
+    sweepInFlight = false;
   }
 }
 
@@ -476,6 +479,7 @@ async function recoverOnStartup(): Promise<void> {
 }
 
 let scheduled = false;
+let sweepInFlight = false;
 let scheduledTask: { stop: () => void; destroy?: () => void } | undefined;
 
 /** Starts the scheduler's poll loop. Every 5s by default, same cadence as the Event Bus dispatcher and the mail send queue. */

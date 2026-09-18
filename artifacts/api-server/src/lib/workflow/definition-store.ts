@@ -66,6 +66,23 @@ export function validateDefinition(def: WorkflowDefinition): void {
     }
   }
 
+  // Compensation is deliberately a one-level unwind. A compensation action
+  // cannot itself declare a compensation action: allowing that graph to
+  // recurse makes a bad definition capable of compensating forever.
+  for (const step of def.steps) {
+    if (step.compensation === step.id) {
+      throw new InvalidDefinitionError(`step "${step.id}" cannot compensate itself`);
+    }
+    if (step.compensation) {
+      const compensationStep = def.steps.find((candidate) => candidate.id === step.compensation);
+      if (compensationStep?.compensation) {
+        throw new InvalidDefinitionError(
+          `compensation step "${step.compensation}" cannot declare another compensation step`,
+        );
+      }
+    }
+  }
+
   if (def.trigger.kind === "schedule" && (!def.trigger.cron || !def.trigger.timezone)) {
     throw new InvalidDefinitionError("schedule trigger requires cron and timezone");
   }

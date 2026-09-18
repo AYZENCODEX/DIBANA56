@@ -20,6 +20,9 @@ export {
 } from "./engine-health";
 export { writeEngineAudit } from "./audit";
 export { registerMegaEngineAuditIntegration } from "./audit-integration";
+export { getEngineLinks } from "./links";
+export type { EngineLinks } from "./links";
+export { startMegaEngine, stopMegaEngine, validateMegaEngineConfiguration } from "./lifecycle";
 
 // Part E3 — §60 Retention / §57-E "cleanup".
 export type { RetentionSweepResult } from "./retention";

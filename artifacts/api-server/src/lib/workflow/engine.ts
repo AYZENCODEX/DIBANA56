@@ -315,6 +315,17 @@ async function failOrCompensate(run: WorkflowRun, definition: WorkflowDefinition
 export async function resumeCompensation(runId: string, definition?: WorkflowDefinition, env: WorkflowRuntimeEnv = {}): Promise<void> {
   const current = await getRun(runId);
   if (!current || current.status !== "COMPENSATING") return;
+  if (!(await claimRunExecution(runId, EXECUTION_OWNER))) return;
+  try {
+    await resumeCompensationWithLease(runId, definition, env);
+  } finally {
+    await releaseRunExecution(runId, EXECUTION_OWNER);
+  }
+}
+
+async function resumeCompensationWithLease(runId: string, definition: WorkflowDefinition | undefined, env: WorkflowRuntimeEnv): Promise<void> {
+  const current = await getRun(runId);
+  if (!current || current.status !== "COMPENSATING") return;
   const resolvedDefinition = definition ?? await getDefinition(current.definitionId, current.definitionVersion);
   if (!resolvedDefinition) throw new DefinitionNotFoundError(current.definitionId, current.definitionVersion);
   const attempts = current.compensationAttempts + 1;

@@ -136,7 +136,7 @@ export async function claimRunExecution(runId: string, owner: string, leaseMs = 
     .set({ executionOwner: owner, executionLeaseUntil: until, executionVersion: sql`${workflowRunTable.executionVersion} + 1`, updatedAt: now })
     .where(and(
       eq(workflowRunTable.id, runId),
-      inArray(workflowRunTable.status, ["PENDING", "RUNNING", "WAITING"]),
+       inArray(workflowRunTable.status, ["PENDING", "RUNNING", "WAITING", "COMPENSATING"]),
       sql`(${workflowRunTable.executionOwner} IS NULL OR ${workflowRunTable.executionLeaseUntil} IS NULL OR ${workflowRunTable.executionLeaseUntil} < ${now})`,
     ))
     .returning({ id: workflowRunTable.id });
@@ -527,4 +527,33 @@ export async function cancelRun(id: string, opts?: { reason?: string; actorUserI
     await cancelJobsForCorrelation(WORKFLOW_RESUME_JOB_TYPE, id);
   }
   return updated.length > 0;
+}
+
+/**
+ * J13 startup recovery. A process can die after claiming a run but before it
+ * releases its lease. Clearing only expired leases keeps the run's durable
+ * state intact; the caller can then re-drive the same run from its current
+ * pending/running step.
+ */
+export async function recoverExpiredRunLeases(): Promise<string[]> {
+  return db.transaction(async (tx) => {
+    const rows = await tx.update(workflowRunTable)
+      .set({ executionOwner: null, executionLeaseUntil: null, updatedAt: new Date() })
+      .where(and(
+        inArray(workflowRunTable.status, ["RUNNING", "COMPENSATING"]),
+        sql`${workflowRunTable.executionLeaseUntil} IS NOT NULL`,
+        sql`${workflowRunTable.executionLeaseUntil} < now()`,
+      ))
+      .returning({ id: workflowRunTable.id });
+    const ids = rows.map((row) => row.id);
+    if (ids.length) {
+      // A crash can leave its current action attempt RUNNING. Re-arm that
+      // durable attempt with the same idempotency key; handlers are required
+      // to make that key safe for external effects.
+      await tx.update(workflowStepRunTable)
+        .set({ status: "PENDING", startedAt: null, error: "Recovered after worker lease expiry" })
+        .where(and(inArray(workflowStepRunTable.runId, ids), eq(workflowStepRunTable.status, "RUNNING")));
+    }
+    return ids;
+  });
 }

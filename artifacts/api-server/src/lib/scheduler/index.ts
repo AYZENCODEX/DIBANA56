@@ -9,10 +9,10 @@
 export type { ScheduledJob, JobStatus, JobHandler, JobHandlerDefinition, ScheduleJobParams, ScheduleCronParams, ScheduleRecurringParams, MisfirePolicy, SchedulerMetricsSnapshot } from "./types";
 
 export { registerJobHandler, getJobHandlerDefinition, isJobTypeRegistered, listJobHandlers, UnknownJobTypeError } from "./job-registry";
-export { scheduleJob, scheduleDelayed, scheduleCron, scheduleRecurring, getJob, getJobsForCorrelation, cancelJob, cancelJobsForCorrelation, hasActiveJobForCorrelation } from "./job-store";
+export { scheduleJob, scheduleDelayed, scheduleCron, scheduleRecurring, getJob, getJobsForCorrelation, cancelJob, cancelJobsForCorrelation, hasActiveJobForCorrelation, pauseJob, resumeJob } from "./job-store";
 export { nextAttemptDelayMs, shouldDeadLetter } from "./retry";
 export { moveToDeadLetter, listDeadLetters, replayDeadLetter, discardDeadLetter } from "./dead-letter";
-export { runSchedulerSweep, startSchedulerWorker } from "./worker";
+export { runSchedulerSweep, startSchedulerWorker, stopSchedulerWorker } from "./worker";
 export { parseCron, nextCronOccurrence, cronOccurrencesInRange } from "./cron-parser";
 export { scheduleForJob, resolveMisfire, nextOccurrenceAfter, CATCH_UP_CAP, type Schedule, type MisfirePlan } from "./misfire";
 

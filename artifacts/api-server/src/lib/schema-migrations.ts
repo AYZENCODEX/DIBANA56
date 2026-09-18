@@ -2607,4 +2607,10 @@ export const MIGRATIONS = [
   "ALTER TABLE workflow_run ADD COLUMN IF NOT EXISTS execution_version INTEGER NOT NULL DEFAULT 0",
   "CREATE INDEX IF NOT EXISTS idx_workflow_run_execution_lease ON workflow_run(execution_lease_until)",
   "CREATE INDEX IF NOT EXISTS idx_workflow_run_status_resume ON workflow_run(status, next_resume_at)",
+  // 118_ayzen_mega_engine_j10_j12_j13_operations.sql
+  // PAUSED is an operator-controlled scheduler state. Workers only claim
+  // SCHEDULED/RETRYING rows, so this is safe to introduce without changing
+  // the claim query.
+  "ALTER TABLE scheduled_job ADD COLUMN IF NOT EXISTS pause_reason TEXT",
+  "CREATE INDEX IF NOT EXISTS idx_scheduled_job_status_run_at ON scheduled_job(status, run_at)",
 ];

@@ -26,14 +26,9 @@ import { startSendQueueWorker } from "./lib/mail-send-queue";
 // logout retry queue's own worker, same "one cron.schedule call per
 // durable queue" registration convention every other worker below uses.
 import { startBackchannelLogoutQueueWorker } from "./lib/oidc-logout-propagation";
-// Mega Engine — Phase 8 blueprint, Part A: Core Event Bus. Same
-// "one cron.schedule call per durable queue" registration convention as
-// every worker above — see lib/event-bus/dispatcher.ts's header.
-import { startEventBusDispatcher } from "./lib/event-bus";
-// Mega Engine — Phase 8 blueprint, Part B1: Scheduler core.
-import { startSchedulerWorker } from "./lib/scheduler";
-// Mega Engine — Phase 8 blueprint, Part E3: §60 Retention / §57-E cleanup.
-import { registerRetentionSweepSchedule, registerMegaEngineAuditIntegration } from "./lib/mega-engine";
+// Mega Engine — J7-J13 lifecycle coordinator. It gates registration,
+// recovery, polling, and shutdown behind the database readiness check.
+import { startMegaEngine, stopMegaEngine } from "./lib/mega-engine";
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { MIGRATIONS } from "./lib/schema-migrations";
@@ -134,9 +129,16 @@ async function runScheduledMailSync(): Promise<void> {
 setTimeout(runScheduledMailSync, 60000);
 setInterval(runScheduledMailSync, 20 * 60 * 1000); // every 20 minutes
 
-setTimeout(waitForDbThenMigrate, 2000);
+setTimeout(() => {
+  waitForDbThenMigrate()
+    .then(() => startMegaEngine())
+    .catch((err) => {
+      logger.error({ err }, "Mega Engine startup failed");
+      logBus.error(`Mega Engine startup failed: ${err?.message ?? err}`);
+    });
+}, 2000);
 
-app.listen(port, (err) => {
+const server = app.listen(port, (err) => {
   if (err) {
     logger.error({ err }, "Error listening on port");
     logBus.error(`Server failed to start: ${(err as Error).message}`);
@@ -168,25 +170,15 @@ app.listen(port, (err) => {
   startVaultBackupKeyRotationCron();
   startSendQueueWorker();
   startBackchannelLogoutQueueWorker();
-  startEventBusDispatcher();
-  startSchedulerWorker();
-  registerMegaEngineAuditIntegration();
-  // Mega Engine — Phase 8 blueprint, Part E3 (§57-E "cleanup" / §60
-  // Retention). Registers the retention-sweep job handler and, if no
-  // prior boot already scheduled it, its daily recurring job — must run
-  // after startSchedulerWorker() so the worker claiming that job once
-  // due is already ticking. Fire-and-forget: a failure here shouldn't
-  // block the server from otherwise starting, same posture every other
-  // best-effort boot step in this function already has (see
-  // waitForDbThenMigrate()'s own retry loop above for the one step that
-  // IS allowed to block).
-  registerRetentionSweepSchedule().catch((err) => {
-    logger.error({ err }, "mega_engine.retention_sweep.schedule_registration_failed");
-  });
-
   // Graceful shutdown — stop Telegram polling before exit so the next start has no 409
+  let shuttingDown = false;
   const shutdown = () => {
-    stopTelegramBot().finally(() => process.exit(0));
+    if (shuttingDown) return;
+    shuttingDown = true;
+    stopMegaEngine()
+      .catch((shutdownErr) => logger.warn({ err: shutdownErr }, "Mega Engine shutdown failed"))
+      .finally(() => stopTelegramBot())
+      .finally(() => server.close(() => process.exit(0)));
   };
   process.once("SIGTERM", shutdown);
   process.once("SIGINT", shutdown);

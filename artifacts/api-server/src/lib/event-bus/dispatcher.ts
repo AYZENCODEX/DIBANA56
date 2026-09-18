@@ -46,7 +46,7 @@ import { recordDispatched, recordHandlerFailure, recordRetried, recordDeadLetter
 import type { EventEnvelope } from "./types";
 
 const WORKER_ID = `${process.pid}-${crypto.randomUUID().slice(0, 8)}`;
-const CLAIM_BATCH_SIZE = 25;
+const CLAIM_BATCH_SIZE = Math.max(1, Number(process.env.ENGINE_EVENT_BATCH_SIZE ?? 25));
 
 // How long a row can sit locked in PROCESSING before the stale-lock sweep
 // reclaims it — long enough that a legitimately slow subscriber chain
@@ -184,17 +184,23 @@ async function dispatchRow(row: typeof eventOutboxTable.$inferSelect): Promise<v
 
 /** One worker tick: claim a batch, dispatch each row. Exposed for tests/manual triggering. */
 export async function runEventBusDispatchSweep(): Promise<{ claimed: number }> {
-  await recoverStaleLocks();
+  if (sweepInFlight) return { claimed: 0 };
+  sweepInFlight = true;
+  try {
+    await recoverStaleLocks();
 
-  const batch = await claimNextBatch(CLAIM_BATCH_SIZE);
-  if (!batch.length) return { claimed: 0 };
+    const batch = await claimNextBatch(CLAIM_BATCH_SIZE);
+    if (!batch.length) return { claimed: 0 };
 
-  for (const row of batch) {
-    await dispatchRow(row);
+    for (const row of batch) {
+      await dispatchRow(row);
+    }
+
+    logBus.system(`📬 Event Bus sweep: dispatched ${batch.length} event(s)`);
+    return { claimed: batch.length };
+  } finally {
+    sweepInFlight = false;
   }
-
-  logBus.system(`📬 Event Bus sweep: dispatched ${batch.length} event(s)`);
-  return { claimed: batch.length };
 }
 
 /** Per-tick stale-lock sweep — same reasoning as mail-send-queue.ts's recoverStaleLocks(): does not bump attemptCount, this is recovering an interrupted attempt, not counting a new failure. */
@@ -227,6 +233,7 @@ async function recoverOnStartup(): Promise<void> {
 }
 
 let scheduled = false;
+let sweepInFlight = false;
 let scheduledTask: { stop: () => void; destroy?: () => void } | undefined;
 
 /**

@@ -12,6 +12,12 @@ import type { WorkflowRun, WorkflowStepDefinition } from "./types";
 export interface CompensationState {
   completedStepIds: string[];
   attempts: number;
+  /** The forward step currently being unwound, if a worker crashed mid-step. */
+  inProgressStepId?: string;
+  /** The compensation action currently being executed, if known. */
+  inProgressCompensationStepId?: string;
+  failedStepId?: string;
+  retryable?: boolean;
   lastError?: string;
 }
 

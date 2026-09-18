@@ -287,3 +287,21 @@ export async function cancelJobsForCorrelation(jobType: string, correlationId: s
     .returning({ id: scheduledJobTable.id });
   return updated.length;
 }
+
+/** J10 operator controls. PAUSED rows remain durable and are never claimable. */
+export async function pauseJob(id: string, reason = "Paused by operator"): Promise<boolean> {
+  const updated = await db.update(scheduledJobTable)
+    .set({ status: "PAUSED", pauseReason: reason, updatedAt: new Date() })
+    .where(and(eq(scheduledJobTable.id, id), inArray(scheduledJobTable.status, ["SCHEDULED", "RETRYING"])))
+    .returning({ id: scheduledJobTable.id });
+  return updated.length > 0;
+}
+
+/** Re-queues a paused job without resetting its attempt history. */
+export async function resumeJob(id: string): Promise<boolean> {
+  const updated = await db.update(scheduledJobTable)
+    .set({ status: "SCHEDULED", pauseReason: null, runAt: new Date(), updatedAt: new Date() })
+    .where(and(eq(scheduledJobTable.id, id), eq(scheduledJobTable.status, "PAUSED")))
+    .returning({ id: scheduledJobTable.id });
+  return updated.length > 0;
+}
