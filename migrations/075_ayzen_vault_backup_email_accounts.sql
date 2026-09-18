@@ -1,0 +1,22 @@
+-- migrations/075_ayzen_vault_backup_email_accounts.sql
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Feature 15u — Vault Backup Coverage Expansion: Connected Mail Accounts.
+--
+-- The native mailbox (gatherMailboxSnapshot, migration 057) covers everything
+-- a user composed/received/organized inside ayzen.tech Mail itself. It never
+-- covered email_accounts — the external IMAP/SMTP mailboxes a user connects
+-- (routes/email-accounts.ts) so AYZEN can fetch/send through their own
+-- existing Gmail/Outlook/custom-domain inbox. A disaster-recovery restore
+-- that rebuilds every native message but can't tell you which outside
+-- mailboxes you'd wired up — at what host/port, under which credentials —
+-- isn't full coverage. lib/vault-snapshot-extra.ts's new
+-- gatherEmailAccountsSnapshot() closes that gap: password/auth_key are
+-- decrypted back into the snapshot the same way Vault entity fields and
+-- wallet seed phrases already are (this table IS the credential being
+-- backed up, not a live bearer token to a system AYZEN itself holds a
+-- session with — see that function's doc comment for the full reasoning).
+--
+-- Same denormalized-count purpose as every other *_count column on this
+-- table: list views can show "X items backed up" without touching `blob`.
+ALTER TABLE vault_snapshots
+  ADD COLUMN IF NOT EXISTS email_accounts_count INTEGER NOT NULL DEFAULT 0;

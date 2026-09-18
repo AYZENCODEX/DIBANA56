@@ -1,0 +1,33 @@
+-- 061_ayzen_vault_backup_entity_coverage.sql
+-- Feature 15h — Vault Backup Coverage Expansion: Entity Coverage
+-- (Local Accounts, Vault Entities, KYC Entities, Game Entities — full
+-- coverage of everything hanging off these four tables, not just the base
+-- rows already covered).
+--
+-- Applied by hand against Supabase (same convention already used for
+-- migrations 055-060: not wired into index.ts's boot-time MIGRATIONS array).
+-- Run AFTER 060.
+--
+-- buildVaultSnapshotPayload() (routes/vault-snapshot.ts, via
+-- lib/vault-snapshot-extra.ts's gatherEntityCoverageSnapshot()) now also
+-- bundles:
+--   - kyc_data_entities        — the actual identity record (name/father's
+--                                name/birth date/photos/NID) a KYC Entity OR
+--                                a Vault Entity can link via data_entity_id.
+--                                Flattened to a top-level `kycDataEntities`
+--                                array and merge-restored the same additive
+--                                way as localAccounts/kycEntries/gameEntries.
+--   - vault_category_receipts  — shareable receipt-card links minted per
+--                                (user, category).
+--   - value_history            — the $ worth / follower-count P&L timeline
+--                                per Vault or Local entity.
+--   - vault_shares             — entity access grants across all four entity
+--                                types, both granted by and received by this
+--                                user.
+-- The last three are backed up (nested under `entityCoverage`) for
+-- disaster-recovery reference but not auto-restored — see the doc comment
+-- on gatherEntityCoverageSnapshot() for why. This column is just a
+-- denormalized count for the "Stored Backups" list UI, same purpose as
+-- entries_count/wallets_count/mailbox_count/etc — the actual data lives
+-- inside the encrypted blob itself.
+ALTER TABLE vault_snapshots ADD COLUMN IF NOT EXISTS entity_coverage_count INTEGER NOT NULL DEFAULT 0;

@@ -1,0 +1,40 @@
+-- 064_ayzen_vault_backup_account_extras.sql
+-- Feature 15m — Vault Backup Coverage Expansion: Account & Platform Extras
+-- (notifications, referrals, subscription/billing state, support tickets,
+-- developer API keys, passkeys, Polymarket trade history — the remaining
+-- account-scoped surfaces that weren't yet part of the backup blob).
+--
+-- Applied by hand against Supabase (same convention already used for
+-- migrations 055-063: not wired into index.ts's boot-time MIGRATIONS array).
+-- Run AFTER 063.
+--
+-- buildVaultSnapshotPayload() (routes/vault-snapshot.ts, via
+-- lib/vault-snapshot-extra.ts's gatherAccountExtrasSnapshot()) now also
+-- bundles, nested under `accountExtras`:
+--   - notifications      — in-app notifications (notifications), most
+--                           recent ACCOUNT_EXTRAS_LIMIT rows.
+--   - referralsMade / referralsReceived — referrals (referrals), both
+--                           directions (this user as referrer and as the
+--                           referred account).
+--   - subscription        — this user's billing/plan state
+--                           (subscriptions), at most one row.
+--   - supportTickets / supportMessages — support_tickets this user opened,
+--                           and every support_messages row on those
+--                           tickets (their own messages and any support
+--                           agent replies).
+--   - apiKeys              — developer API keys (api_keys), metadata only —
+--                           key_hash is never included, same reasoning as
+--                           stripping password_hash from `profile`.
+--   - passkeys              — WebAuthn credentials (passkey_credentials).
+--                           credential_id/public_key are the public half of
+--                           a key pair and were already safe to display in
+--                           the app, so they're included in full.
+--   - polymarketTrades      — real-money Polymarket trade history
+--                           (polymarket_trades).
+-- Reference-only, not auto-restored — same reasoning as
+-- finance/profile/activity/entityCoverage/emergencyAccess (see
+-- gatherAccountExtrasSnapshot's doc comment). This column is just a
+-- denormalized count for the "Stored Backups" list UI, same purpose as
+-- entries_count/entity_coverage_count/emergency_access_count/etc — the
+-- actual data lives inside the encrypted blob itself.
+ALTER TABLE vault_snapshots ADD COLUMN IF NOT EXISTS account_extras_count INTEGER NOT NULL DEFAULT 0;

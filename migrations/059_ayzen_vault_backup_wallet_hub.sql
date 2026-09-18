@@ -1,0 +1,18 @@
+-- 059_ayzen_vault_backup_wallet_hub.sql
+-- Feature 15e — Vault Backup Coverage Expansion: Wallet Hub.
+--
+-- Applied by hand against Supabase (same convention already used for
+-- migrations 055-058: not wired into index.ts's boot-time MIGRATIONS array).
+-- Run AFTER 058.
+--
+-- buildVaultSnapshotPayload() (routes/vault-snapshot.ts, via
+-- lib/vault-snapshot-extra.ts's gatherWalletHubSnapshot()) now also bundles
+-- everything the Wallet Hub page (pages/user/wallet-hub.tsx) shows beyond
+-- the base `wallets` rows already covered: user-to-user transfers
+-- (wallet_transfers), internal AZN/USDT/BDT/XP balances (credits) + their
+-- purchase history (credit_transactions), off-chain built-in-wallet token
+-- balances (builtin_wallet_tokens), and on-chain deposit history
+-- (chain_deposits). This column is just a denormalized count for the
+-- "Stored Backups" list UI, same purpose as entries_count/wallets_count —
+-- the actual data lives inside the encrypted blob itself.
+ALTER TABLE vault_snapshots ADD COLUMN IF NOT EXISTS wallet_hub_count INTEGER NOT NULL DEFAULT 0;

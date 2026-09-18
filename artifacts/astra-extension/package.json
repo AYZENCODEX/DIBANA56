@@ -1,0 +1,9 @@
+{
+  "name": "@workspace/astra-extension",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AYZEN Astra — browser extension (Manifest V3). Vault autofill v1 + account status indicator.",
+  "scripts": {
+    "typecheck": "echo 'astra-extension: no build step yet (plain JS) — nothing to typecheck'"
+  }
+}

@@ -1,0 +1,23 @@
+-- migrations/076_ayzen_vault_backup_mailbox_reputation.sql
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Feature 15w — Vault Backup Coverage Expansion: Mailbox Deliverability &
+-- Reputation.
+--
+-- The native mailbox (gatherMailboxSnapshot, migration 057) covers what a
+-- user composed/received/organized inside ayzen.tech Mail. It never covered
+-- the moderation state layered on top: ayzen_mailbox_sender_reputation (the
+-- Block/Allow list behind GET /mailbox/senders?status=blocked|allowed),
+-- ayzen_mailbox_recipient_reputation (outbound addresses this user's own
+-- sends have flagged/blocked), and ayzen_mailbox_sending_health (this
+-- account's own healthy/warning/paused sending status). A disaster-recovery
+-- restore that rebuilds every message but loses your block list and makes
+-- you re-trip every bounce flag from scratch isn't full coverage. See
+-- gatherMailboxReputationSnapshot's doc comment in lib/vault-snapshot-extra.ts
+-- for the full reasoning, including why ayzen_mailbox_send_queue (transient
+-- worker state) and ayzen_mailbox_sending_config (a platform-wide singleton,
+-- not per-user data) are deliberately left out.
+--
+-- Same denormalized-count purpose as every other *_count column on this
+-- table: list views can show "X items backed up" without touching `blob`.
+ALTER TABLE vault_snapshots
+  ADD COLUMN IF NOT EXISTS mailbox_reputation_count INTEGER NOT NULL DEFAULT 0;

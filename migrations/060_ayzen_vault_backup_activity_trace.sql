@@ -1,0 +1,19 @@
+-- 060_ayzen_vault_backup_activity_trace.sql
+-- Feature 15f — Vault Backup Coverage Expansion: Activity Trace.
+--
+-- Applied by hand against Supabase (same convention already used for
+-- migrations 055-059: not wired into index.ts's boot-time MIGRATIONS array).
+-- Run AFTER 059.
+--
+-- buildVaultSnapshotPayload() (routes/vault-snapshot.ts, via
+-- lib/vault-snapshot-extra.ts's gatherActivitySnapshot()) now also bundles
+-- this user's general event log (`user_activity`) plus the two
+-- Vault-specific audit trails (`vault_activity_log`, `vault_field_history`)
+-- into every export/scheduled backup blob — capped to the most recent 2000
+-- rows per table (see ACTIVITY_TRACE_LIMIT), since an activity log grows
+-- forever and pulling it unbounded would blow past the per-user storage
+-- quota introduced alongside this change. This column is just a
+-- denormalized count for the "Stored Backups" list UI, same purpose as
+-- entries_count/wallets_count/mailbox_count/etc — the actual trace data
+-- lives inside the encrypted blob itself.
+ALTER TABLE vault_snapshots ADD COLUMN IF NOT EXISTS activity_count INTEGER NOT NULL DEFAULT 0;

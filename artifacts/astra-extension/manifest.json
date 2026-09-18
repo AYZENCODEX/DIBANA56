@@ -1,0 +1,56 @@
+{
+  "manifest_version": 3,
+  "name": "AYZEN Astra",
+  "short_name": "Astra",
+  "description": "AYZEN Astra — Sylo vault autofill and account status, everywhere you browse.",
+  "version": "0.1.0",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon-16-off.png",
+      "32": "icons/icon-32-off.png",
+      "48": "icons/icon-48-off.png",
+      "128": "icons/icon-128-off.png"
+    },
+    "default_title": "AYZEN Astra"
+  },
+  "background": {
+    "service_worker": "background/background.js",
+    "type": "module"
+  },
+  "options_page": "options/options.html",
+  "permissions": [
+    "cookies",
+    "storage",
+    "scripting",
+    "activeTab",
+    "alarms"
+  ],
+  "host_permissions": [
+    "https://*.ayzen.tech/*",
+    "https://ayzen.tech/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "exclude_matches": ["https://*.ayzen.tech/*", "https://ayzen.tech/*"],
+      "js": ["content/field-detect.js", "content/content-script.js"],
+      "css": ["content/astra-overlay.css"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["icons/icon-16.png", "icons/icon-32.png"],
+      "matches": ["http://*/*", "https://*/*"]
+    }
+  ],
+  "minimum_chrome_version": "110"
+}

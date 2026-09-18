@@ -1,0 +1,35 @@
+-- 085_ayzen_oidc_clients_backchannel_logout_uri.sql
+-- OIDC Roadmap — Season 3, Phase 6e-b: Sylo Integration.
+-- Run this once in Supabase SQL Editor. Run AFTER 084.
+--
+-- Phase 6d-c's own Decision Record flagged this exact gap as 6e's (not
+-- 6d's) work to close: "oidc_clients টেবিলে এখনো কোনো backchannel_logout_uri
+-- কলাম নেই ... 6e-এ নতুন migration লাগবে" — OpenID Back-Channel Logout 1.0
+-- needs somewhere to record, per registered client, WHERE this provider
+-- should POST a signed Logout Token (§2.5) when that client's user signs
+-- out anywhere else.
+--
+-- Kept as its own column, not folded into `redirect_uris` or
+-- `post_logout_redirect_uris` (migration 084's own header gives the
+-- identical reasoning for why THOSE two are separate from each other):
+-- this is a third, independent registered URI with its own purpose
+-- (server-to-server event delivery, never a browser redirect target) and
+-- its own OIDC spec (Back-Channel Logout 1.0, not RFC 6749 or RP-Initiated
+-- Logout 1.0).
+--
+-- NULL is not "unknown" — it is the correct, common, FAIL-CLOSED default:
+-- a client that hasn't registered one simply never receives propagation
+-- (see lib/oidc-logout-propagation.ts's resolveBackchannelLogoutTargets(),
+-- which filters on this column being non-null). This Season's own scope
+-- is Sylo only (Phase 6d-a) — scripts/src/seed-oidc-clients.ts seeds a
+-- real value for `sylo` and leaves Ryft/Wisp/Verve/Zynth NULL, exactly
+-- the state this fail-closed default already produces for any client no
+-- one has explicitly registered.
+--
+-- No FOREIGN KEY, no UNIQUE, no NOT NULL — a single nullable TEXT column,
+-- the same shape migration 084 already chose for `post_logout_redirect_uris`'s
+-- sibling case, for the identical reason: this is per-client registry
+-- data with no live join target, not a relationship that needs
+-- referential integrity enforced at the DB layer.
+ALTER TABLE oidc_clients
+  ADD COLUMN IF NOT EXISTS backchannel_logout_uri TEXT NULL;

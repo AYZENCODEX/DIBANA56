@@ -1,0 +1,23 @@
+-- 062_ayzen_vault_backup_emergency_access.sql
+-- Feature 15j — Vault Backup Coverage Expansion: Emergency Access
+-- (dead-man-switch nominations + grants — Feature 16's emergency_contacts
+-- and emergency_access_grants, previously excluded from every backup).
+--
+-- Applied by hand against Supabase (same convention already used for
+-- migrations 055-061: not wired into index.ts's boot-time MIGRATIONS array).
+-- Run AFTER 061.
+--
+-- buildVaultSnapshotPayload() (routes/vault-snapshot.ts, via
+-- lib/vault-snapshot-extra.ts's gatherEmergencyAccessSnapshot()) now also
+-- bundles, nested under `emergencyAccess`:
+--   - contactsOwned   — emergency_contacts this user nominated.
+--   - grantsOwned     — emergency_access_grants triggered against this
+--                       user's own vault.
+--   - grantsAsContact — grants where this user is the nominated contact
+--                       (resolved via emergency_contacts.contact_user_id).
+-- Reference-only, not auto-restored — same reasoning as entityCoverage/
+-- finance/profile/activity (see gatherEmergencyAccessSnapshot's doc
+-- comment). This column is just a denormalized count for the "Stored
+-- Backups" list UI, same purpose as entries_count/entity_coverage_count/
+-- etc — the actual data lives inside the encrypted blob itself.
+ALTER TABLE vault_snapshots ADD COLUMN IF NOT EXISTS emergency_access_count INTEGER NOT NULL DEFAULT 0;

@@ -1,0 +1,40 @@
+-- 065_ayzen_vault_backup_team_earning.sql
+-- Feature 15n — Vault Backup Coverage Expansion: Team & Earning
+--
+-- Applied by hand against Supabase (same convention already used for
+-- migrations 055-064: not wired into index.ts's boot-time MIGRATIONS array).
+-- Run AFTER 064.
+--
+-- buildVaultSnapshotPayload() (routes/vault-snapshot.ts, via
+-- lib/vault-snapshot-extra.ts's gatherTeamSnapshot() / gatherEarningSnapshot())
+-- now also bundles two more account-scoped surfaces:
+--
+--   team (nested):
+--     - teamsOwned          — teams this user owns (teams.owner_id).
+--     - memberships         — team_members rows for this user, across every
+--                             team they belong to.
+--     - joinRequestsMade    — team_join_requests this user filed.
+--     - favorites           — team_favorites: teams this user starred.
+--     - messagesSent        — team_messages this user posted.
+--     - announcementsPosted — team_announcements this user authored.
+--     - missionsCreated     — team_missions this user created.
+--     - teamActivityLegacy  — team_activity_log rows this user triggered
+--                             (pre-Phase-17-audit-fix log; historical only).
+--     - teamActivityShared  — activity_log rows with subject_type='team'
+--                             where this user was the actor (the current,
+--                             post-fix team event log).
+--
+--   earning (nested):
+--     - earnLinks — this user's own pay-per-click earn_links (title, target
+--                   URL, code, rate, click/earned counters). The AZN
+--                   balance those links produce is already covered by the
+--                   existing walletHub.credits surface (Feature 15e).
+--
+-- Reference-only, not auto-restored — same reasoning as
+-- walletHub/activity/entityCoverage/emergencyAccess/accountExtras (see
+-- gatherTeamSnapshot's / gatherEarningSnapshot's doc comments). These
+-- columns are just denormalized counts for the "Stored Backups" list UI,
+-- same purpose as entries_count/account_extras_count/etc — the actual data
+-- lives inside the encrypted blob itself.
+ALTER TABLE vault_snapshots ADD COLUMN IF NOT EXISTS team_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE vault_snapshots ADD COLUMN IF NOT EXISTS earning_count INTEGER NOT NULL DEFAULT 0;

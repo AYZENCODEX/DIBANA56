@@ -1,0 +1,40 @@
+-- migrations/092_ayzen_oidc_clients_registration_access_token.sql
+-- ─────────────────────────────────────────────────────────────────────────────
+-- OIDC Roadmap — Season 4, Phase 8e: Client Configuration Management Token
+-- (RFC 7592-স্কোপড-ডাউন).
+--
+-- Adds `registration_access_token_hash` to `oidc_clients` — the SHA-256
+-- hash (same `hashClientSecret()` already used for `client_secret_hash`,
+-- migration 079) of the bearer token `POST /oidc/register` (Phase 8a) now
+-- also issues once, in-band, alongside `client_secret`. A dynamically-
+-- registered client presents THIS token (never `client_secret`) to
+-- `GET/PUT /oidc/register/:client_id` (this same pass) to read back or
+-- update its own `client_name`/`redirect_uris` without a fresh
+-- admin-issued credential.
+--
+-- Nullable, NO backfill, and deliberately so:
+--   - every client seeded before this column existed (Sylo/Ryft/Wisp/
+--     Verve/Zynth — first-party, admin/migration-created) has no
+--     self-management token and never will. First-party clients are
+--     managed by Phase 9's (not yet built) admin UI, not by this
+--     bearer-token path — there is nothing correct to backfill here, unlike
+--     migration 091's own `registration_status` backfill (where every
+--     pre-existing row needed to become `'approved'` or logins would break
+--     immediately). Leaving this `NULL` breaks nothing: nobody has ever
+--     been able to call `PUT /oidc/register/sylo` and nobody should be
+--     able to start now.
+--   - every dynamically-registered client created via 8a BEFORE this
+--     migration ran was issued without a registration_access_token (the
+--     feature didn't exist yet) — `NULL` here means exactly "this client
+--     cannot currently self-manage," which is also the correct, safe
+--     answer for those rows: no plaintext token to retroactively hash
+--     exists anywhere to backfill even if we wanted to.
+--
+-- Enforcement (`validateOidcClientRegistrationAccessToken()`,
+-- `lib/oidc-client-validation.ts`) already treats a NULL hash as an
+-- automatic reject — same fail-closed posture migration 085's own header
+-- established for `backchannel_logout_uri`'s `null` default on this same
+-- table.
+
+ALTER TABLE oidc_clients
+  ADD COLUMN registration_access_token_hash TEXT;

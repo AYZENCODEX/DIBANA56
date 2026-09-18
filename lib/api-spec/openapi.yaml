@@ -1,0 +1,2151 @@
+openapi: 3.1.0
+info:
+  title: Api
+  version: 0.1.0
+  description: AYZEN Crypto Airdrop Management Platform API
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: auth
+    description: Authentication operations
+  - name: users
+    description: User management
+  - name: projects
+    description: Airdrop project management
+  - name: tasks
+    description: Task management
+  - name: tools
+    description: Platform tools (gas, wallet, streak)
+  - name: vault
+    description: Encrypted vault operations
+  - name: leaderboard
+    description: Leaderboard operations
+  - name: broadcast
+    description: Broadcast messaging
+  - name: settings
+    description: Platform settings
+  - name: telemetry
+    description: Developer telemetry
+  - name: polymarket
+    description: Real-money Polymarket trading via a user's own wallet
+
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  # ── AUTH ──────────────────────────────────────────────
+  /auth/register:
+    post:
+      operationId: register
+      tags: [auth]
+      summary: Register a new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterInput"
+      responses:
+        "201":
+          description: User registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Login with email + password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginInput"
+      responses:
+        "200":
+          description: Logged in
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+
+  /auth/refresh:
+    post:
+      operationId: refreshToken
+      tags: [auth]
+      summary: Refresh JWT token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshInput"
+      responses:
+        "200":
+          description: Token refreshed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+
+  /auth/setup-2fa:
+    post:
+      operationId: setup2fa
+      tags: [auth]
+      summary: Setup TOTP 2FA — returns QR code data
+      responses:
+        "200":
+          description: 2FA setup info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TwoFASetup"
+
+  /auth/verify-2fa:
+    post:
+      operationId: verify2fa
+      tags: [auth]
+      summary: Verify TOTP code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TwoFAVerifyInput"
+      responses:
+        "200":
+          description: 2FA verified
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /auth/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      summary: Get current authenticated user
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+
+  # ── USERS ─────────────────────────────────────────────
+  /users:
+    get:
+      operationId: listUsers
+      tags: [users]
+      summary: List all users (admin)
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: role
+          in: query
+          schema:
+            type: string
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of users
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserListResponse"
+
+  /users/{id}:
+    get:
+      operationId: getUser
+      tags: [users]
+      summary: Get user by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: User details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserDetail"
+    patch:
+      operationId: updateUser
+      tags: [users]
+      summary: Update user (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserUpdate"
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+    delete:
+      operationId: deleteUser
+      tags: [users]
+      summary: Delete user (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /users/{id}/stats:
+    get:
+      operationId: getUserStats
+      tags: [users]
+      summary: Get user stats summary
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: User stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserStats"
+
+  # ── PLATFORM STATS ────────────────────────────────────
+  /admin/stats:
+    get:
+      operationId: getPlatformStats
+      tags: [users]
+      summary: Get global platform statistics
+      responses:
+        "200":
+          description: Platform stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformStats"
+
+  /admin/activity:
+    get:
+      operationId: getPlatformActivity
+      tags: [users]
+      summary: Get daily/monthly platform activity chart data
+      responses:
+        "200":
+          description: Activity data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActivityData"
+
+  # ── PROJECTS ──────────────────────────────────────────
+  /projects:
+    get:
+      operationId: listProjects
+      tags: [projects]
+      summary: List all projects
+      parameters:
+        - name: tier
+          in: query
+          schema:
+            type: string
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of projects
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectListResponse"
+    post:
+      operationId: createProject
+      tags: [projects]
+      summary: Create a new project (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectInput"
+      responses:
+        "201":
+          description: Created project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+
+  /projects/{id}:
+    get:
+      operationId: getProject
+      tags: [projects]
+      summary: Get project by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Project details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectDetail"
+    patch:
+      operationId: updateProject
+      tags: [projects]
+      summary: Update project (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectUpdate"
+      responses:
+        "200":
+          description: Updated project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+    delete:
+      operationId: deleteProject
+      tags: [projects]
+      summary: Delete project (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /projects/{id}/join:
+    post:
+      operationId: joinProject
+      tags: [projects]
+      summary: Join a project (user)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Joined
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /projects/{id}/stats:
+    get:
+      operationId: getProjectStats
+      tags: [projects]
+      summary: Get project statistics
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Project stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectStats"
+
+  /projects/{id}/members:
+    get:
+      operationId: getProjectMembers
+      tags: [projects]
+      summary: Get users working on a project
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Project members
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProjectMember"
+
+  # ── TASKS ─────────────────────────────────────────────
+  /tasks:
+    get:
+      operationId: listTasks
+      tags: [tasks]
+      summary: List tasks (optionally filtered by project)
+      parameters:
+        - name: projectId
+          in: query
+          schema:
+            type: integer
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: userId
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of tasks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Task"
+    post:
+      operationId: createTask
+      tags: [tasks]
+      summary: Create a task (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskInput"
+      responses:
+        "201":
+          description: Created task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+
+  /tasks/{id}:
+    get:
+      operationId: getTask
+      tags: [tasks]
+      summary: Get task by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+    patch:
+      operationId: updateTask
+      tags: [tasks]
+      summary: Update task (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskUpdate"
+      responses:
+        "200":
+          description: Updated task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+    delete:
+      operationId: deleteTask
+      tags: [tasks]
+      summary: Delete task (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /tasks/{id}/submit:
+    post:
+      operationId: submitTask
+      tags: [tasks]
+      summary: User submits a task completion
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskSubmitInput"
+      responses:
+        "200":
+          description: Submitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskSubmission"
+
+  /tasks/{id}/verify:
+    post:
+      operationId: verifyTask
+      tags: [tasks]
+      summary: Admin verifies or rejects a task submission
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskVerifyInput"
+      responses:
+        "200":
+          description: Verified
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /tasks/submissions:
+    get:
+      operationId: listSubmissions
+      tags: [tasks]
+      summary: List all task submissions (admin review queue)
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: projectId
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Submissions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TaskSubmission"
+
+  # ── TOOLS ─────────────────────────────────────────────
+  /tools/gas:
+    get:
+      operationId: getGasPrices
+      tags: [tools]
+      summary: Get gas prices for all supported networks
+      responses:
+        "200":
+          description: Gas prices
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/GasPrice"
+
+  /tools/gas/{network}:
+    get:
+      operationId: getGasByNetwork
+      tags: [tools]
+      summary: Get gas price for a specific network
+      parameters:
+        - name: network
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Gas price
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GasPrice"
+
+  /tools/wallet-analysis:
+    post:
+      operationId: analyzeWallet
+      tags: [tools]
+      summary: Analyze a wallet address across networks
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WalletAnalysisInput"
+      responses:
+        "200":
+          description: Wallet analysis result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WalletAnalysis"
+
+  /tools/streak/{userId}:
+    get:
+      operationId: getUserStreak
+      tags: [tools]
+      summary: Get streak data for a user
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Streak data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StreakData"
+
+  /tools/spam-score:
+    post:
+      operationId: getSpamScore
+      tags: [tools]
+      summary: Analyze wallet for spam patterns
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SpamScoreInput"
+      responses:
+        "200":
+          description: Spam analysis
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SpamScore"
+
+  # ── VAULT ─────────────────────────────────────────────
+  /vault:
+    get:
+      operationId: listVaultEntries
+      tags: [vault]
+      summary: List vault entries for current user
+      responses:
+        "200":
+          description: Vault entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/VaultEntry"
+    post:
+      operationId: createVaultEntry
+      tags: [vault]
+      summary: Create a vault entry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VaultEntryInput"
+      responses:
+        "201":
+          description: Created vault entry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VaultEntry"
+
+  /vault/{id}:
+    get:
+      operationId: getVaultEntry
+      tags: [vault]
+      summary: Get vault entry by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Vault entry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VaultEntry"
+    patch:
+      operationId: updateVaultEntry
+      tags: [vault]
+      summary: Update vault entry
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VaultEntryUpdate"
+      responses:
+        "200":
+          description: Updated vault entry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VaultEntry"
+    delete:
+      operationId: deleteVaultEntry
+      tags: [vault]
+      summary: Delete vault entry
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  # ── LEADERBOARD ───────────────────────────────────────
+  /leaderboard:
+    get:
+      operationId: getLeaderboard
+      tags: [leaderboard]
+      summary: Get leaderboard rankings
+      parameters:
+        - name: period
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Leaderboard
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LeaderboardEntry"
+
+  # ── BROADCAST ─────────────────────────────────────────
+  /broadcast:
+    get:
+      operationId: listBroadcasts
+      tags: [broadcast]
+      summary: List all broadcasts (admin)
+      responses:
+        "200":
+          description: Broadcasts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Broadcast"
+    post:
+      operationId: sendBroadcast
+      tags: [broadcast]
+      summary: Send a broadcast message
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BroadcastInput"
+      responses:
+        "201":
+          description: Broadcast sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Broadcast"
+
+  /broadcast/inbox:
+    get:
+      operationId: getBroadcastInbox
+      tags: [broadcast]
+      summary: Get broadcast inbox for current user
+      responses:
+        "200":
+          description: Inbox messages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Broadcast"
+
+  # ── SETTINGS ──────────────────────────────────────────
+  /settings:
+    get:
+      operationId: getSettings
+      tags: [settings]
+      summary: Get platform settings
+      responses:
+        "200":
+          description: Settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformSettings"
+    patch:
+      operationId: updateSettings
+      tags: [settings]
+      summary: Update platform settings (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SettingsUpdate"
+      responses:
+        "200":
+          description: Updated settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformSettings"
+
+  # ── TELEMETRY ─────────────────────────────────────────
+  /telemetry/functions:
+    get:
+      operationId: getTelemetryFunctions
+      tags: [telemetry]
+      summary: Get function registry with call counts and status
+      responses:
+        "200":
+          description: Function registry
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TelemetryFunction"
+
+  /telemetry/errors:
+    get:
+      operationId: getTelemetryErrors
+      tags: [telemetry]
+      summary: Get error log
+      parameters:
+        - name: level
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Error log entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ErrorLogEntry"
+
+  /telemetry/ping:
+    get:
+      operationId: pingServices
+      tags: [telemetry]
+      summary: Ping all registered services
+      responses:
+        "200":
+          description: Service ping results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ServicePing"
+
+  /telemetry/smoke-test:
+    post:
+      operationId: runSmokeTest
+      tags: [telemetry]
+      summary: Run smoke test suite across API endpoints
+      responses:
+        "200":
+          description: Smoke test results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SmokeTestResult"
+
+  /polymarket/markets:
+    get:
+      operationId: listPolymarketMarkets
+      tags: [polymarket]
+      summary: Browse active Polymarket markets (Gamma API proxy)
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Active markets
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  markets:
+                    type: array
+                    items:
+                      type: object
+
+  /polymarket/markets/{id}:
+    get:
+      operationId: getPolymarketMarket
+      tags: [polymarket]
+      summary: Get a single Polymarket market, with resolved CLOB token ids
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Market detail
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  market:
+                    type: object
+                  yesTokenId:
+                    type: string
+                    nullable: true
+                  noTokenId:
+                    type: string
+                    nullable: true
+
+  /polymarket/balance:
+    get:
+      operationId: getPolymarketBalance
+      tags: [polymarket]
+      summary: Get the requesting user's own wallet's on-chain USDC balance
+      parameters:
+        - name: walletId
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Wallet balance
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PolymarketBalance"
+
+  /polymarket/trades:
+    get:
+      operationId: listPolymarketTrades
+      tags: [polymarket]
+      summary: Get the requesting user's own Polymarket trade history
+      responses:
+        "200":
+          description: Trade history
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  trades:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/PolymarketTrade"
+
+  /polymarket/trade:
+    post:
+      operationId: placePolymarketTrade
+      tags: [polymarket]
+      summary: Place a REAL-money buy order, signed and funded by the user's own wallet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PolymarketTradeInput"
+      responses:
+        "200":
+          description: Order submitted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  orderId:
+                    type: string
+                    nullable: true
+                  trade:
+                    $ref: "#/components/schemas/PolymarketTrade"
+        "400":
+          description: Validation error (bad price/size/missing fields)
+        "502":
+          description: Order rejected by the CLOB or failed to submit
+
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required: [status]
+
+    MessageResponse:
+      type: object
+      properties:
+        message:
+          type: string
+      required: [message]
+
+    # ── AUTH ────────────────────────────────────────────
+    RegisterInput:
+      type: object
+      required: [username, email, password]
+      properties:
+        username:
+          type: string
+        email:
+          type: string
+        password:
+          type: string
+
+    LoginInput:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+        totpCode:
+          type: ["string", "null"]
+
+    RefreshInput:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+
+    AuthResponse:
+      type: object
+      required: [token, refreshToken, user]
+      properties:
+        token:
+          type: string
+        refreshToken:
+          type: string
+        user:
+          $ref: "#/components/schemas/User"
+
+    TwoFASetup:
+      type: object
+      required: [otpauthUrl, secret, qrCodeDataUrl]
+      properties:
+        otpauthUrl:
+          type: string
+        secret:
+          type: string
+        qrCodeDataUrl:
+          type: string
+
+    TwoFAVerifyInput:
+      type: object
+      required: [code]
+      properties:
+        code:
+          type: string
+
+    # ── USER ────────────────────────────────────────────
+    User:
+      type: object
+      required: [id, username, email, role, status, createdAt]
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+        status:
+          type: string
+        avatarUrl:
+          type: ["string", "null"]
+        twoFaEnabled:
+          type: boolean
+        emailVerified:
+          type: boolean
+        createdAt:
+          type: string
+        lastActiveAt:
+          type: ["string", "null"]
+        walletCount:
+          type: integer
+        totalRoi:
+          type: number
+
+    UserDetail:
+      type: object
+      required: [id, username, email, role, status, createdAt]
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+        status:
+          type: string
+        avatarUrl:
+          type: ["string", "null"]
+        twoFaEnabled:
+          type: boolean
+        emailVerified:
+          type: boolean
+        createdAt:
+          type: string
+        lastActiveAt:
+          type: ["string", "null"]
+        walletCount:
+          type: integer
+        totalRoi:
+          type: number
+        projectCount:
+          type: integer
+        tasksCompleted:
+          type: integer
+        streak:
+          type: integer
+        walletAddresses:
+          type: array
+          items:
+            type: string
+
+    UserUpdate:
+      type: object
+      properties:
+        role:
+          type: string
+        status:
+          type: string
+        username:
+          type: string
+
+    UserStats:
+      type: object
+      required: [totalRoi, projectCount, tasksCompleted, streak, walletCount, rank, tasksToday, tasksThisWeek]
+      properties:
+        totalRoi:
+          type: number
+        projectCount:
+          type: integer
+        tasksCompleted:
+          type: integer
+        streak:
+          type: integer
+        longestStreak:
+          type: integer
+        walletCount:
+          type: integer
+        points:
+          type: integer
+        referrals:
+          type: integer
+        rank:
+          type: integer
+        totalUsers:
+          type: integer
+        tasksToday:
+          type: integer
+        tasksThisWeek:
+          type: integer
+
+    UserListResponse:
+      type: object
+      required: [users, total, page, limit]
+      properties:
+        users:
+          type: array
+          items:
+            $ref: "#/components/schemas/User"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+
+    PlatformStats:
+      type: object
+      required: [totalUsers, activeUsers, totalProjects, totalRoiDistributed, totalInvestments, newUsersThisWeek, newUsersThisMonth, activeProjectCount]
+      properties:
+        totalUsers:
+          type: integer
+        activeUsers:
+          type: integer
+        totalProjects:
+          type: integer
+        totalRoiDistributed:
+          type: number
+        pendingRoi:
+          type: number
+        projectedRoi:
+          type: number
+        totalInvestments:
+          type: number
+        newUsersThisWeek:
+          type: integer
+        newUsersThisMonth:
+          type: integer
+        activeProjectCount:
+          type: integer
+
+    ActivityData:
+      type: object
+      required: [daily, monthly]
+      properties:
+        daily:
+          type: array
+          items:
+            $ref: "#/components/schemas/ActivityPoint"
+        monthly:
+          type: array
+          items:
+            $ref: "#/components/schemas/ActivityPoint"
+
+    ActivityPoint:
+      type: object
+      required: [date, users, tasks, roi]
+      properties:
+        date:
+          type: string
+        users:
+          type: integer
+        tasks:
+          type: integer
+        roi:
+          type: number
+
+    # ── PROJECT ─────────────────────────────────────────
+    Project:
+      type: object
+      required: [id, name, tier, fundingAmount, rewardEstimate, createdAt]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        twitterHandle:
+          type: ["string", "null"]
+        discordUrl:
+          type: ["string", "null"]
+        websiteUrl:
+          type: ["string", "null"]
+        tutorialLink:
+          type: ["string", "null"]
+        experienceLevel:
+          type: string
+        tier:
+          type: string
+        fundingAmount:
+          type: number
+        rewardEstimate:
+          type: number
+        thumbnailUrl:
+          type: ["string", "null"]
+        bannerUrl:
+          type: ["string", "null"]
+        tutorialSteps:
+          type: ["string", "null"]
+        badges:
+          type: ["string", "null"]
+        taskCount:
+          type: integer
+        completedTaskCount:
+          type: integer
+        activeUserCount:
+          type: integer
+        totalRoiDistributed:
+          type: number
+        createdAt:
+          type: string
+
+    ProjectDetail:
+      type: object
+      required: [id, name, tier, fundingAmount, rewardEstimate, createdAt, tasks]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        twitterHandle:
+          type: ["string", "null"]
+        discordUrl:
+          type: ["string", "null"]
+        websiteUrl:
+          type: ["string", "null"]
+        tutorialLink:
+          type: ["string", "null"]
+        experienceLevel:
+          type: string
+        tier:
+          type: string
+        fundingAmount:
+          type: number
+        rewardEstimate:
+          type: number
+        thumbnailUrl:
+          type: ["string", "null"]
+        bannerUrl:
+          type: ["string", "null"]
+        tutorialSteps:
+          type: ["string", "null"]
+        badges:
+          type: ["string", "null"]
+        taskCount:
+          type: integer
+        completedTaskCount:
+          type: integer
+        activeUserCount:
+          type: integer
+        totalRoiDistributed:
+          type: number
+        createdAt:
+          type: string
+        tasks:
+          type: array
+          items:
+            $ref: "#/components/schemas/Task"
+        isJoined:
+          type: boolean
+        userProgress:
+          type: number
+
+    ProjectInput:
+      type: object
+      required: [name, tier, fundingAmount, rewardEstimate]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        twitterHandle:
+          type: string
+        discordUrl:
+          type: string
+        websiteUrl:
+          type: string
+        tutorialLink:
+          type: string
+        experienceLevel:
+          type: string
+        tier:
+          type: string
+        fundingAmount:
+          type: number
+        rewardEstimate:
+          type: number
+        thumbnailUrl:
+          type: string
+        bannerUrl:
+          type: string
+        tutorialSteps:
+          type: string
+        badges:
+          type: string
+
+    ProjectUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        twitterHandle:
+          type: string
+        discordUrl:
+          type: string
+        websiteUrl:
+          type: string
+        tutorialLink:
+          type: string
+        experienceLevel:
+          type: string
+        tier:
+          type: string
+        fundingAmount:
+          type: number
+        rewardEstimate:
+          type: number
+        thumbnailUrl:
+          type: string
+        bannerUrl:
+          type: string
+        tutorialSteps:
+          type: string
+        badges:
+          type: string
+
+    ProjectStats:
+      type: object
+      required: [totalTasks, completedTasks, activeUsers, totalRoiDistributed]
+      properties:
+        totalTasks:
+          type: integer
+        completedTasks:
+          type: integer
+        activeUsers:
+          type: integer
+        totalRoiDistributed:
+          type: number
+
+    ProjectListResponse:
+      type: object
+      required: [projects, total, page, limit]
+      properties:
+        projects:
+          type: array
+          items:
+            $ref: "#/components/schemas/Project"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+
+    ProjectMember:
+      type: object
+      required: [userId, username, progress, tasksCompleted, joinedAt]
+      properties:
+        userId:
+          type: integer
+        username:
+          type: string
+        avatarUrl:
+          type: ["string", "null"]
+        progress:
+          type: number
+        tasksCompleted:
+          type: integer
+        joinedAt:
+          type: string
+
+    # ── TASK ────────────────────────────────────────────
+    Task:
+      type: object
+      required: [id, projectId, name, verificationType, taskType, createdAt]
+      properties:
+        id:
+          type: integer
+        projectId:
+          type: integer
+        projectName:
+          type: ["string", "null"]
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        rewardAmount:
+          type: ["number", "null"]
+        verificationType:
+          type: string
+        taskType:
+          type: string
+        completionCount:
+          type: integer
+        userStatus:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+
+    TaskInput:
+      type: object
+      required: [projectId, name, verificationType, taskType]
+      properties:
+        projectId:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+        rewardAmount:
+          type: number
+        verificationType:
+          type: string
+        taskType:
+          type: string
+
+    TaskUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        rewardAmount:
+          type: number
+        verificationType:
+          type: string
+        taskType:
+          type: string
+
+    TaskSubmitInput:
+      type: object
+      properties:
+        proofUrl:
+          type: string
+        notes:
+          type: string
+
+    TaskSubmission:
+      type: object
+      required: [id, taskId, userId, status, submittedAt]
+      properties:
+        id:
+          type: integer
+        taskId:
+          type: integer
+        taskName:
+          type: ["string", "null"]
+        userId:
+          type: integer
+        username:
+          type: ["string", "null"]
+        status:
+          type: string
+        proofUrl:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        submittedAt:
+          type: string
+        reviewedAt:
+          type: ["string", "null"]
+
+    TaskVerifyInput:
+      type: object
+      required: [submissionId, approved]
+      properties:
+        submissionId:
+          type: integer
+        approved:
+          type: boolean
+        rejectionReason:
+          type: string
+
+    # ── TOOLS ───────────────────────────────────────────
+    GasPrice:
+      type: object
+      required: [network, networkId, slow, standard, fast, usdPerTx]
+      properties:
+        network:
+          type: string
+        networkId:
+          type: string
+        slow:
+          type: number
+        standard:
+          type: number
+        fast:
+          type: number
+        usdPerTx:
+          type: number
+        updatedAt:
+          type: string
+
+    WalletAnalysisInput:
+      type: object
+      required: [address, networks]
+      properties:
+        address:
+          type: string
+        networks:
+          type: array
+          items:
+            type: string
+
+    WalletAnalysis:
+      type: object
+      required: [address, walletAge, txCount, txVolume, activityScore]
+      properties:
+        address:
+          type: string
+        walletAge:
+          type: integer
+        txCount:
+          type: integer
+        txVolume:
+          type: number
+        firstTx:
+          type: ["string", "null"]
+        lastTx:
+          type: ["string", "null"]
+        firstBridge:
+          type: ["string", "null"]
+        lastBridge:
+          type: ["string", "null"]
+        firstSwap:
+          type: ["string", "null"]
+        lastSwap:
+          type: ["string", "null"]
+        totalGasUsed:
+          type: number
+        netWorth:
+          type: number
+        activityScore:
+          type: integer
+        networks:
+          type: array
+          items:
+            type: string
+
+    StreakData:
+      type: object
+      required: [userId, currentStreak, longestStreak, lastActiveDate, streakByProject]
+      properties:
+        userId:
+          type: integer
+        currentStreak:
+          type: integer
+        longestStreak:
+          type: integer
+        lastActiveDate:
+          type: ["string", "null"]
+        streakByProject:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectStreak"
+
+    ProjectStreak:
+      type: object
+      required: [projectId, projectName, streak]
+      properties:
+        projectId:
+          type: integer
+        projectName:
+          type: string
+        streak:
+          type: integer
+
+    SpamScoreInput:
+      type: object
+      required: [address]
+      properties:
+        address:
+          type: string
+        networks:
+          type: array
+          items:
+            type: string
+
+    SpamScore:
+      type: object
+      required: [address, score, level, dustTxCount, highFreqLowValueCount, explanation]
+      properties:
+        address:
+          type: string
+        score:
+          type: integer
+        level:
+          type: string
+        dustTxCount:
+          type: integer
+        highFreqLowValueCount:
+          type: integer
+        explanation:
+          type: string
+
+    # ── VAULT ───────────────────────────────────────────
+    VaultEntry:
+      type: object
+      required: [id, userId, projectName, createdAt]
+      properties:
+        id:
+          type: integer
+        userId:
+          type: integer
+        entitySerial:
+          type: ["string", "null"]
+        projectName:
+          type: string
+        email:
+          type: ["string", "null"]
+        twitterUsername:
+          type: ["string", "null"]
+        discordUsername:
+          type: ["string", "null"]
+        telegramUsername:
+          type: ["string", "null"]
+        walletAddresses:
+          type: array
+          items:
+            type: string
+        backupCodes:
+          type: array
+          items:
+            type: string
+        notes:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+
+    VaultEntryInput:
+      type: object
+      required: [projectName]
+      properties:
+        projectName:
+          type: string
+        email:
+          type: string
+        twitterUsername:
+          type: string
+        discordUsername:
+          type: string
+        telegramUsername:
+          type: string
+        walletAddresses:
+          type: array
+          items:
+            type: string
+        backupCodes:
+          type: array
+          items:
+            type: string
+        notes:
+          type: string
+
+    VaultEntryUpdate:
+      type: object
+      properties:
+        projectName:
+          type: string
+        email:
+          type: string
+        twitterUsername:
+          type: string
+        discordUsername:
+          type: string
+        telegramUsername:
+          type: string
+        walletAddresses:
+          type: array
+          items:
+            type: string
+        backupCodes:
+          type: array
+          items:
+            type: string
+        notes:
+          type: string
+
+    # ── LEADERBOARD ─────────────────────────────────────
+    LeaderboardEntry:
+      type: object
+      required: [rank, userId, username, totalRoi, tasksCompleted, streak, projectCount]
+      properties:
+        rank:
+          type: integer
+        userId:
+          type: integer
+        username:
+          type: string
+        avatarUrl:
+          type: ["string", "null"]
+        totalRoi:
+          type: number
+        tasksCompleted:
+          type: integer
+        streak:
+          type: integer
+        projectCount:
+          type: integer
+
+    # ── BROADCAST ───────────────────────────────────────
+    Broadcast:
+      type: object
+      required: [id, title, message, channel, status, createdAt]
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        message:
+          type: string
+        channel:
+          type: string
+        recipientFilter:
+          type: string
+        recipientCount:
+          type: integer
+        status:
+          type: string
+        scheduledAt:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+
+    BroadcastInput:
+      type: object
+      required: [title, message, channel]
+      properties:
+        title:
+          type: string
+        message:
+          type: string
+        channel:
+          type: string
+        recipientFilter:
+          type: string
+        scheduledAt:
+          type: string
+
+    # ── SETTINGS ────────────────────────────────────────
+    PlatformSettings:
+      type: object
+      required: [platformName, primaryColor]
+      properties:
+        platformName:
+          type: string
+        logoUrl:
+          type: ["string", "null"]
+        primaryColor:
+          type: string
+        smtpHost:
+          type: ["string", "null"]
+        smtpPort:
+          type: ["integer", "null"]
+        smtpUser:
+          type: ["string", "null"]
+        telegramBotUsername:
+          type: ["string", "null"]
+        telegramWebhookUrl:
+          type: ["string", "null"]
+        twoFaIssuerName:
+          type: ["string", "null"]
+        bkashNumber:
+          type: ["string", "null"]
+        nagadNumber:
+          type: ["string", "null"]
+        usdtAddress:
+          type: ["string", "null"]
+        usdtNetwork:
+          type: ["string", "null"]
+
+    SettingsUpdate:
+      type: object
+      properties:
+        platformName:
+          type: string
+        logoUrl:
+          type: string
+        primaryColor:
+          type: string
+        smtpHost:
+          type: string
+        smtpPort:
+          type: integer
+        smtpUser:
+          type: string
+        smtpPassword:
+          type: string
+        telegramBotToken:
+          type: string
+        telegramBotUsername:
+          type: string
+        telegramWebhookUrl:
+          type: string
+        twoFaIssuerName:
+          type: string
+        bkashNumber:
+          type: string
+        nagadNumber:
+          type: string
+        usdtAddress:
+          type: string
+        usdtNetwork:
+          type: string
+
+    # ── TELEMETRY ───────────────────────────────────────
+    TelemetryFunction:
+      type: object
+      required: [name, route, status, callCount24h, callCount7d]
+      properties:
+        name:
+          type: string
+        route:
+          type: string
+        method:
+          type: string
+        status:
+          type: string
+        callCount24h:
+          type: integer
+        callCount7d:
+          type: integer
+        errorRate:
+          type: number
+        avgLatencyMs:
+          type: number
+
+    ErrorLogEntry:
+      type: object
+      required: [id, level, message, endpoint, timestamp]
+      properties:
+        id:
+          type: integer
+        level:
+          type: string
+        message:
+          type: string
+        endpoint:
+          type: ["string", "null"]
+        stack:
+          type: ["string", "null"]
+        timestamp:
+          type: string
+
+    ServicePing:
+      type: object
+      required: [name, url, status, latencyMs]
+      properties:
+        name:
+          type: string
+        url:
+          type: string
+        status:
+          type: string
+        latencyMs:
+          type: number
+
+    SmokeTestResult:
+      type: object
+      required: [endpoint, method, passed, statusCode]
+      properties:
+        endpoint:
+          type: string
+        method:
+          type: string
+        passed:
+          type: boolean
+        statusCode:
+          type: integer
+        latencyMs:
+          type: number
+        error:
+          type: ["string", "null"]
+
+    PolymarketBalance:
+      type: object
+      required: [address, balance]
+      properties:
+        address:
+          type: string
+        balance:
+          type: number
+
+    PolymarketTrade:
+      type: object
+      required: [id, userId, walletId, marketId, tokenId, outcome, side, price, sizeUsdc, status, createdAt]
+      properties:
+        id:
+          type: integer
+        userId:
+          type: integer
+        walletId:
+          type: integer
+        marketId:
+          type: string
+        marketQuestion:
+          type: ["string", "null"]
+        tokenId:
+          type: string
+        outcome:
+          type: string
+          enum: [YES, NO]
+        side:
+          type: string
+          enum: [BUY, SELL]
+        price:
+          type: number
+        sizeUsdc:
+          type: number
+        status:
+          type: string
+          enum: [submitted, failed, filled, cancelled]
+        clobOrderId:
+          type: ["string", "null"]
+        errorMessage:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+
+    PolymarketTradeInput:
+      type: object
+      required: [walletId, marketId, tokenId, outcome, price, sizeUsdc, confirm]
+      properties:
+        walletId:
+          type: integer
+        marketId:
+          type: string
+        marketQuestion:
+          type: string
+        tokenId:
+          type: string
+        outcome:
+          type: string
+          enum: [YES, NO]
+        price:
+          type: number
+          minimum: 0.01
+          maximum: 0.99
+        sizeUsdc:
+          type: number
+          minimum: 0.01
+        confirm:
+          type: boolean
+          description: Must be explicitly true — a lightweight guard against accidental double-submits.

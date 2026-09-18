@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>AYZEN Astra</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header>
+    <img src="../icons/icon-32.png" alt="" />
+    <div>
+      <h1>AYZEN Astra</h1>
+      <p id="status-line">Checking session…</p>
+    </div>
+  </header>
+
+  <section id="signed-out" class="hidden">
+    <p>You're not signed in to your AYZEN Account.</p>
+    <a id="sign-in-link" class="btn" href="#" target="_blank" rel="noopener">Sign in to AYZEN</a>
+  </section>
+
+  <section id="signed-in" class="hidden">
+    <div class="user-row">
+      <span id="user-email"></span>
+    </div>
+
+    <h2>This site</h2>
+    <div id="site-matches"></div>
+
+    <button id="refresh-btn" class="btn-secondary">Refresh vault</button>
+  </section>
+
+  <footer>
+    <a href="../options/options.html" target="_blank">Settings</a>
+  </footer>
+
+  <script src="popup.js" type="module"></script>
+</body>
+</html>

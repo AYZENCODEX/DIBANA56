@@ -1,0 +1,38 @@
+-- 095_ayzen_oidc_refresh_tokens_cascade_idx.sql
+-- OIDC Roadmap — Season 5, Phase 10c: Cascade Revocation by Client.
+-- Run this once in Supabase SQL Editor. Run AFTER 094.
+--
+-- `revokeAllTokensForClientAndUser()`/`revokeAllTokensForClient()`
+-- (`lib/oidc-token-revocation.ts`, this pass, composing
+-- `revokeRefreshTokensForClient()` in `lib/oidc-refresh-tokens.ts`) both
+-- bulk-`UPDATE oidc_refresh_tokens SET revoked_at = NOW() WHERE client_id
+-- = $1 [AND user_id = $2] AND revoked_at IS NULL` — the per-user-per-client
+-- shape 7d's own consent-revoke needs, and the per-client-all-users shape
+-- 9d's own admin-suspend needs. Neither existing index on this table
+-- (`oidc_refresh_tokens_token_hash_idx`, a single-row lookup by hash;
+-- `oidc_refresh_tokens_expires_at_idx`, a cleanup-job scan) serves this
+-- WHERE shape — both of 10c's real callers filter by `client_id` (and
+-- optionally `user_id`), never by `token_hash` or `expires_at` alone. Same
+-- "index the exact WHERE + ORDER BY shape the one real caller uses"
+-- precedent `oidc_client_admin_audit_log_client_id_at_idx` (093) and
+-- `oidc_user_consents_user_id_active_idx` (088) already set.
+--
+-- PARTIAL INDEX (`WHERE revoked_at IS NULL`), NOT a plain composite index
+-- — same reasoning `oidc_user_consents_user_id_active_idx` (088) already
+-- gives for its own `WHERE revoked_at IS NULL` partial index: every real
+-- caller of this cascade only ever wants to touch STILL-LIVE rows (an
+-- already-revoked row is a no-op it would just re-`UPDATE` into itself,
+-- same idempotent-no-op posture `revokeRefreshTokenByHash()`'s own single-
+-- row `UPDATE ... AND revoked_at IS NULL` already takes) — so the index
+-- only needs to hold the rows either cascade path could actually change,
+-- not the full, ever-growing history of already-revoked/expired tokens
+-- this table accumulates over time.
+--
+-- `(client_id, user_id)` COLUMN ORDER — `client_id` first: every 10c
+-- caller filters by `client_id` (9d's admin-suspend has no `user_id` to
+-- filter by at all), so a `client_id`-leading index serves BOTH callers'
+-- WHERE shape; a `user_id`-leading index would serve only 7d's narrower
+-- one.
+CREATE INDEX IF NOT EXISTS oidc_refresh_tokens_client_id_user_id_idx
+  ON oidc_refresh_tokens(client_id, user_id)
+  WHERE revoked_at IS NULL;

@@ -1,0 +1,749 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@plugin "@tailwindcss/typography";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-card-border: hsl(var(--card-border));
+
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-popover-border: hsl(var(--popover-border));
+
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+
+  /* Indirection through --ui-* so Theme Studio can swap font/radius at runtime
+     via a root style override, with the shipped values as the fallback. */
+  --font-sans: var(--ui-font-sans, 'Space Mono', 'Inter', monospace, sans-serif);
+  --font-mono: var(--ui-font-mono, 'Space Mono', monospace);
+
+  --radius-sm: var(--ui-radius-sm, 2px);
+  --radius-md: var(--ui-radius-md, 4px);
+  --radius-lg: var(--ui-radius-lg, 8px);
+  --radius-xl: var(--ui-radius-xl, 12px);
+
+  /* Enterprise semantic status colors */
+  --color-success: hsl(var(--success));
+  --color-success-foreground: hsl(var(--success-foreground));
+  --color-success-muted: hsl(var(--success-muted));
+  --color-warning: hsl(var(--warning));
+  --color-warning-foreground: hsl(var(--warning-foreground));
+  --color-warning-muted: hsl(var(--warning-muted));
+  --color-danger: hsl(var(--danger));
+  --color-danger-foreground: hsl(var(--danger-foreground));
+  --color-danger-muted: hsl(var(--danger-muted));
+  --color-info: hsl(var(--info));
+  --color-info-foreground: hsl(var(--info-foreground));
+  --color-info-muted: hsl(var(--info-muted));
+  --color-pending: hsl(var(--pending));
+  --color-pending-foreground: hsl(var(--pending-foreground));
+  --color-pending-muted: hsl(var(--pending-muted));
+
+  /* Elevation shadow scale (structural depth, not brand glow) */
+  --shadow-elevation-1: var(--elevation-1);
+  --shadow-elevation-2: var(--elevation-2);
+  --shadow-elevation-3: var(--elevation-3);
+  --shadow-elevation-4: var(--elevation-4);
+}
+
+/* ─── Color tokens ──────────────────────────────────────────────────────────── */
+
+:root {
+  --background: 222 20% 6%;
+  --foreground: 180 60% 94%;
+
+  --card: 222 18% 8%;
+  --card-foreground: 180 60% 94%;
+  --card-border: 180 80% 18%;
+
+  --popover: 222 18% 8%;
+  --popover-foreground: 180 60% 94%;
+  --popover-border: 180 80% 18%;
+
+  --primary: 174 100% 42%;
+  --primary-foreground: 222 20% 6%;
+
+  --secondary: 265 90% 62%;
+  --secondary-foreground: 0 0% 100%;
+
+  --muted: 222 16% 13%;
+  --muted-foreground: 180 25% 55%;
+
+  --accent: 174 100% 16%;
+  --accent-foreground: 174 100% 82%;
+
+  --destructive: 0 90% 58%;
+  --destructive-foreground: 0 0% 100%;
+
+  --border: 180 60% 18%;
+  --input: 222 18% 10%;
+  --ring: 174 100% 42%;
+
+  --sidebar-background: 222 22% 5%;
+  --sidebar-foreground: 180 40% 78%;
+  --sidebar-primary: 174 100% 42%;
+  --sidebar-primary-foreground: 222 20% 6%;
+  --sidebar-accent: 174 100% 13%;
+  --sidebar-accent-foreground: 174 100% 92%;
+  --sidebar-border: 180 60% 16%;
+  --sidebar-ring: 174 100% 42%;
+
+  /* ── Enterprise semantic status tokens ──────────────────────────────────
+     Deliberately separate from --primary/--secondary: those are BRAND
+     (teal/violet, used for CTAs, active nav, decorative glow). These are
+     STATE — they describe fact (funded/pending/failed), not brand, so they
+     never shift with theme accents. Use for tx status, KYC state, sync
+     health, balance deltas — anywhere the color itself is information. */
+  --success: 152 69% 42%;
+  --success-foreground: 0 0% 100%;
+  --success-muted: 152 55% 14%;
+  --warning: 38 95% 52%;
+  --warning-foreground: 26 40% 10%;
+  --warning-muted: 38 70% 14%;
+  --danger: 0 84% 60%;
+  --danger-foreground: 0 0% 100%;
+  --danger-muted: 0 60% 15%;
+  --info: 206 90% 58%;
+  --info-foreground: 0 0% 100%;
+  --info-muted: 206 60% 14%;
+  --pending: 42 15% 62%;
+  --pending-foreground: 222 20% 8%;
+  --pending-muted: 42 10% 16%;
+
+  /* ── Elevation scale ─────────────────────────────────────────────────────
+     Structural depth (this sits above that), separate from the brand
+     glow-pulse effects (which signal "active/live", not stacking order).
+     Neutral black shadows so elevation reads the same regardless of which
+     accent color is nearby. */
+  --elevation-1: 0 1px 2px hsl(222 40% 2% / 0.4);
+  --elevation-2: 0 2px 8px hsl(222 40% 2% / 0.45), 0 1px 2px hsl(222 40% 2% / 0.3);
+  --elevation-3: 0 8px 24px hsl(222 40% 2% / 0.5), 0 2px 6px hsl(222 40% 2% / 0.3);
+  --elevation-4: 0 16px 48px hsl(222 40% 2% / 0.55), 0 4px 12px hsl(222 40% 2% / 0.35);
+}
+
+.dark {
+  --background: 222 22% 5%;
+  --foreground: 180 60% 94%;
+
+  --card: 222 20% 7%;
+  --card-foreground: 180 60% 94%;
+  --card-border: 180 70% 17%;
+
+  --popover: 222 20% 7%;
+  --popover-foreground: 180 60% 94%;
+  --popover-border: 180 70% 17%;
+
+  --primary: 174 100% 42%;
+  --primary-foreground: 222 22% 5%;
+
+  --secondary: 265 90% 62%;
+  --secondary-foreground: 0 0% 100%;
+
+  --muted: 222 18% 11%;
+  --muted-foreground: 180 25% 52%;
+
+  --accent: 174 100% 14%;
+  --accent-foreground: 174 100% 82%;
+
+  --destructive: 0 90% 58%;
+  --destructive-foreground: 0 0% 100%;
+
+  --border: 180 60% 16%;
+  --input: 222 20% 9%;
+  --ring: 174 100% 42%;
+
+  --sidebar-background: 222 24% 4%;
+  --sidebar-foreground: 180 40% 78%;
+  --sidebar-primary: 174 100% 42%;
+  --sidebar-primary-foreground: 222 22% 5%;
+  --sidebar-accent: 174 100% 11%;
+  --sidebar-accent-foreground: 174 100% 92%;
+  --sidebar-border: 180 55% 14%;
+  --sidebar-ring: 174 100% 42%;
+
+  --success: 152 69% 42%;
+  --success-foreground: 0 0% 100%;
+  --success-muted: 152 55% 14%;
+  --warning: 38 95% 52%;
+  --warning-foreground: 26 40% 10%;
+  --warning-muted: 38 70% 14%;
+  --danger: 0 84% 60%;
+  --danger-foreground: 0 0% 100%;
+  --danger-muted: 0 60% 15%;
+  --info: 206 90% 58%;
+  --info-foreground: 0 0% 100%;
+  --info-muted: 206 60% 14%;
+  --pending: 42 15% 62%;
+  --pending-foreground: 222 20% 8%;
+  --pending-muted: 42 10% 16%;
+
+  --elevation-1: 0 1px 2px hsl(222 40% 1% / 0.5);
+  --elevation-2: 0 2px 8px hsl(222 40% 1% / 0.55), 0 1px 2px hsl(222 40% 1% / 0.35);
+  --elevation-3: 0 8px 24px hsl(222 40% 1% / 0.6), 0 2px 6px hsl(222 40% 1% / 0.35);
+  --elevation-4: 0 16px 48px hsl(222 40% 1% / 0.65), 0 4px 12px hsl(222 40% 1% / 0.4);
+}
+
+/* ─── Base ──────────────────────────────────────────────────────────────────── */
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply font-sans antialiased bg-background text-foreground;
+    font-feature-settings: "liga" 1, "calt" 1;
+  }
+
+  /* Premium scrollbar */
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(174 100% 42% / 0.2);
+    border-radius: 2px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(174 100% 42% / 0.4);
+  }
+
+  /* Selection */
+  ::selection {
+    background: hsl(174 100% 42% / 0.25);
+    color: hsl(180 60% 94%);
+  }
+}
+
+/* ─── Animations ────────────────────────────────────────────────────────────── */
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-8px); }
+}
+@keyframes float-delayed {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-12px); }
+}
+@keyframes glow-pulse {
+  0%, 100% {
+    box-shadow:
+      0 0 8px 1px hsl(174 100% 42% / 0.20),
+      0 0 32px 6px hsl(174 100% 42% / 0.06),
+      inset 0 1px 0 hsl(174 100% 42% / 0.08);
+  }
+  50% {
+    box-shadow:
+      0 0 20px 4px hsl(174 100% 42% / 0.45),
+      0 0 64px 16px hsl(174 100% 42% / 0.12),
+      inset 0 1px 0 hsl(174 100% 42% / 0.15);
+  }
+}
+@keyframes glow-pulse-violet {
+  0%, 100% { box-shadow: 0 0 12px 2px hsl(265 90% 62% / 0.25), 0 0 40px 8px hsl(265 90% 62% / 0.08); }
+  50% { box-shadow: 0 0 24px 6px hsl(265 90% 62% / 0.5), 0 0 80px 20px hsl(265 90% 62% / 0.15); }
+}
+@keyframes shimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes slide-right {
+  from { opacity: 0; transform: translateX(-16px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.94) translateY(4px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@keyframes spin-reverse {
+  from { transform: rotate(360deg); }
+  to { transform: rotate(0deg); }
+}
+@keyframes particle-drift {
+  0% { transform: translate(0, 0) scale(1); opacity: 0.6; }
+  33% { transform: translate(30px, -20px) scale(1.2); opacity: 1; }
+  66% { transform: translate(-15px, -40px) scale(0.8); opacity: 0.8; }
+  100% { transform: translate(0, 0) scale(1); opacity: 0.6; }
+}
+@keyframes scan-line {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100vh); }
+}
+@keyframes border-flow {
+  0%, 100% { border-color: hsl(174 100% 42% / 0.5); }
+  50% { border-color: hsl(265 90% 62% / 0.5); }
+}
+@keyframes aurora {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+@keyframes count-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes noise {
+  0%  { transform: translate(0, 0); }
+  10% { transform: translate(-1%, -1%); }
+  20% { transform: translate(1%, 0); }
+  30% { transform: translate(-1%, 1%); }
+  40% { transform: translate(1%, -1%); }
+  50% { transform: translate(0, 1%); }
+  60% { transform: translate(-1%, 0); }
+  70% { transform: translate(0, -1%); }
+  80% { transform: translate(1%, 1%); }
+  90% { transform: translate(-1%, -1%); }
+  100%{ transform: translate(0, 0); }
+}
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.85); }
+}
+@keyframes terminal-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* ─── Animation utility classes ─────────────────────────────────────────────── */
+
+.animate-float          { animation: float 4s ease-in-out infinite; }
+.animate-float-delayed  { animation: float-delayed 5s ease-in-out infinite 1.5s; }
+.animate-glow-pulse     { animation: glow-pulse 3s ease-in-out infinite; }
+.animate-glow-pulse-violet { animation: glow-pulse-violet 3s ease-in-out infinite; }
+.animate-shimmer {
+  background: linear-gradient(90deg, transparent 0%, hsl(174 100% 42% / 0.12) 50%, transparent 100%);
+  background-size: 200% auto;
+  animation: shimmer 2.5s linear infinite;
+}
+.animate-fade-up        { animation: fade-up 0.45s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.animate-fade-in        { animation: fade-in 0.35s ease both; }
+.animate-slide-right    { animation: slide-right 0.4s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.animate-scale-in       { animation: scale-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.animate-spin-slow      { animation: spin-slow 12s linear infinite; }
+.animate-spin-reverse   { animation: spin-reverse 18s linear infinite; }
+.animate-border-flow    { animation: border-flow 4s ease-in-out infinite; }
+.animate-pulse-dot      { animation: pulse-dot 2s ease-in-out infinite; }
+.animate-terminal-blink { animation: terminal-blink 1s step-end infinite; }
+.animate-aurora {
+  background-size: 300% 300%;
+  animation: aurora 8s ease infinite;
+}
+
+/* Stagger delays */
+.delay-50  { animation-delay: 50ms; }
+.delay-100 { animation-delay: 100ms; }
+.delay-150 { animation-delay: 150ms; }
+.delay-200 { animation-delay: 200ms; }
+.delay-300 { animation-delay: 300ms; }
+.delay-400 { animation-delay: 400ms; }
+.delay-500 { animation-delay: 500ms; }
+.delay-600 { animation-delay: 600ms; }
+.delay-700 { animation-delay: 700ms; }
+.delay-800 { animation-delay: 800ms; }
+
+/* ─── Premium interactive states ───────────────────────────────────────────── */
+
+.hover-lift {
+  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.22s ease;
+}
+.hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 32px hsl(174 100% 42% / 0.12), 0 2px 8px hsl(0 0% 0% / 0.3);
+}
+
+.hover-glow {
+  transition: box-shadow 0.3s ease, border-color 0.3s ease;
+}
+.hover-glow:hover {
+  box-shadow: 0 0 24px hsl(174 100% 42% / 0.25), 0 0 4px hsl(174 100% 42% / 0.1);
+  border-color: hsl(174 100% 42% / 0.5);
+}
+
+.hover-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.hover-shimmer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 35%, hsl(180 100% 95% / 0.04) 50%, transparent 65%);
+  transform: translateX(-100%);
+  transition: transform 0.55s ease;
+  pointer-events: none;
+}
+.hover-shimmer:hover::after {
+  transform: translateX(100%);
+}
+
+/* ─── Premium glass card ────────────────────────────────────────────────────── */
+
+.glass-card {
+  background: hsl(222 20% 8% / 0.85);
+  backdrop-filter: blur(16px) saturate(1.4);
+  border: 1px solid hsl(174 100% 42% / 0.12);
+  box-shadow:
+    0 1px 0 inset hsl(174 100% 42% / 0.06),
+    0 24px 48px hsl(0 0% 0% / 0.24);
+}
+
+/* ─── Premium card ──────────────────────────────────────────────────────────── */
+
+.premium-card {
+  background: linear-gradient(145deg, hsl(222 20% 9%), hsl(222 22% 7%));
+  border: 1px solid hsl(174 100% 42% / 0.14);
+  box-shadow:
+    0 1px 0 inset hsl(174 100% 42% / 0.07),
+    0 0 0 1px hsl(0 0% 0% / 0.2),
+    0 8px 24px hsl(0 0% 0% / 0.2);
+}
+.premium-card:hover {
+  border-color: hsl(174 100% 42% / 0.28);
+  box-shadow:
+    0 1px 0 inset hsl(174 100% 42% / 0.1),
+    0 0 0 1px hsl(0 0% 0% / 0.2),
+    0 12px 40px hsl(0 0% 0% / 0.28),
+    0 0 32px hsl(174 100% 42% / 0.06);
+}
+
+/* ─── Premium input focus ───────────────────────────────────────────────────── */
+
+input:focus, textarea:focus, select:focus {
+  outline: none;
+}
+
+/* ─── Sidebar premium ───────────────────────────────────────────────────────── */
+
+.sidebar-glow-active {
+  box-shadow: inset 3px 0 0 hsl(174 100% 42%), 0 0 12px hsl(174 100% 42% / 0.08);
+}
+
+/* ─── Scan line overlay ─────────────────────────────────────────────────────── */
+
+.scan-line::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, hsl(174 100% 42% / 0.06), transparent);
+  animation: scan-line 10s linear infinite;
+  pointer-events: none;
+}
+
+/* ─── Noise texture ─────────────────────────────────────────────────────────── */
+
+.noise-texture {
+  position: relative;
+  overflow: hidden;
+}
+.noise-texture::before {
+  content: '';
+  position: absolute;
+  inset: -50%;
+  width: 200%;
+  height: 200%;
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  background-size: 128px 128px;
+  animation: noise 0.5s steps(2) infinite;
+  pointer-events: none;
+}
+
+/* ─── Terminal cursor ───────────────────────────────────────────────────────── */
+
+.terminal-cursor::after {
+  content: '_';
+  animation: terminal-blink 1s step-end infinite;
+  color: hsl(174 100% 42%);
+}
+
+/* ─── Page entry animation ──────────────────────────────────────────────────── */
+
+.page-enter {
+  animation: fade-up 0.38s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* ─── Premium badge glow ────────────────────────────────────────────────────── */
+
+.badge-glow {
+  box-shadow: 0 0 8px currentColor;
+}
+
+/* ─── Gradient text ─────────────────────────────────────────────────────────── */
+
+.gradient-text-primary {
+  background: linear-gradient(135deg, hsl(174 100% 55%), hsl(174 100% 38%));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.gradient-text-duo {
+  background: linear-gradient(135deg, hsl(174 100% 50%), hsl(265 90% 62%));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ─── Premium table row ─────────────────────────────────────────────────────── */
+
+.table-row-premium {
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+.table-row-premium:hover {
+  background: hsl(174 100% 42% / 0.03);
+}
+
+/* ─── Status dot ────────────────────────────────────────────────────────────── */
+
+.status-online {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: hsl(142 76% 50%);
+  box-shadow: 0 0 6px hsl(142 76% 50% / 0.6);
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+.status-offline {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: hsl(0 0% 40%);
+}
+
+/* ─── Premium divider ───────────────────────────────────────────────────────── */
+
+.divider-glow {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, hsl(174 100% 42% / 0.25), transparent);
+}
+
+/* ─── Code block ────────────────────────────────────────────────────────────── */
+
+code, pre {
+  font-family: 'Space Mono', monospace;
+  font-size: 0.78em;
+}
+
+/* ─── Page & element animations ─────────────────────────────────────────────── */
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes slideInLeft {
+  from { opacity: 0; transform: translateX(-16px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes glowPulse {
+  0%, 100% { text-shadow: 0 0 6px hsl(174 100% 42% / 0.4); }
+  50%       { text-shadow: 0 0 18px hsl(174 100% 42% / 0.8), 0 0 40px hsl(174 100% 42% / 0.3); }
+}
+@keyframes scanLine {
+  0%   { transform: translateY(-100%); opacity: 0.15; }
+  100% { transform: translateY(100vh); opacity: 0; }
+}
+@keyframes borderGlow {
+  0%, 100% { border-color: hsl(174 100% 42% / 0.15); }
+  50%       { border-color: hsl(174 100% 42% / 0.45); box-shadow: 0 0 12px hsl(174 100% 42% / 0.1); }
+}
+@keyframes countUp {
+  from { opacity: 0; transform: scale(0.85); }
+  to   { opacity: 1; transform: scale(1); }
+}
+@keyframes typewriter {
+  from { width: 0; }
+  to   { width: 100%; }
+}
+
+.animate-fade-in   { animation: fadeIn  0.35s ease both; }
+.animate-slide-up  { animation: slideUp 0.4s ease both; }
+.animate-slide-left{ animation: slideInLeft 0.35s ease both; }
+.animate-count-up  { animation: countUp 0.5s cubic-bezier(0.34,1.56,0.64,1) both; }
+.text-glow         { animation: glowPulse 3s ease-in-out infinite; }
+.border-glow       { animation: borderGlow 4s ease-in-out infinite; }
+
+/* staggered children */
+.stagger-children > * { animation: slideUp 0.4s ease both; }
+.stagger-children > *:nth-child(1)  { animation-delay: 0ms; }
+.stagger-children > *:nth-child(2)  { animation-delay: 40ms; }
+.stagger-children > *:nth-child(3)  { animation-delay: 80ms; }
+.stagger-children > *:nth-child(4)  { animation-delay: 120ms; }
+.stagger-children > *:nth-child(5)  { animation-delay: 160ms; }
+.stagger-children > *:nth-child(6)  { animation-delay: 200ms; }
+.stagger-children > *:nth-child(7)  { animation-delay: 240ms; }
+.stagger-children > *:nth-child(8)  { animation-delay: 280ms; }
+.stagger-children > *:nth-child(9)  { animation-delay: 320ms; }
+.stagger-children > *:nth-child(10) { animation-delay: 360ms; }
+
+/* page transition wrapper */
+.page-enter { animation: fadeIn 0.3s ease both; }
+
+/* number ticker */
+.ticker { font-variant-numeric: tabular-nums; }
+
+/* mobile-safe touch targets */
+@media (max-width: 640px) {
+  .mobile-tap { min-height: 44px; min-width: 44px; }
+  .mobile-text { font-size: 14px !important; }
+}
+
+/* card hover lift */
+.card-lift {
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.card-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px hsl(174 100% 42% / 0.08);
+}
+
+/* ── New popup / entrance animations ──────────────────────────────────────── */
+@keyframes popIn {
+  0%   { opacity: 0; transform: scale(0.88) translateY(6px); }
+  60%  { opacity: 1; transform: scale(1.03) translateY(-2px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes bounceIn {
+  0%   { opacity: 0; transform: scale(0.6); }
+  55%  { opacity: 1; transform: scale(1.1); }
+  75%  { transform: scale(0.95); }
+  100% { transform: scale(1); }
+}
+
+/* animate-pop-in: spring scale-up used on cards, rows, banners */
+.animate-pop-in      { animation: popIn      0.32s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+/* animate-slide-in-left: inner sidebar entrance (reuses existing slideInLeft keyframe) */
+.animate-slide-in-left{ animation: slideInLeft 0.28s cubic-bezier(0.22, 1, 0.36, 1) both; }
+/* animate-slide-down: accordion / expand reveal */
+.animate-slide-down  { animation: slideDown  0.22s ease both; }
+/* animate-bounce-in: notification / badge entrance */
+.animate-bounce-in   { animation: bounceIn   0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+
+@keyframes shake {
+  10%, 90% { transform: translateX(-1px); }
+  20%, 80% { transform: translateX(2px); }
+  30%, 50%, 70% { transform: translateX(-4px); }
+  40%, 60% { transform: translateX(4px); }
+}
+/* animate-shake: error feedback on wrong PIN/password/code */
+.animate-shake        { animation: shake 0.4s cubic-bezier(0.36, 0.07, 0.19, 0.97) both; }
+/* badge-pulse convenience alias */
+.badge-pulse         { animation: bounceIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+
+/* Dialog pop animation */
+[data-state="open"][role="dialog"],
+[data-state="open"][role="alertdialog"] {
+  animation: popIn 0.28s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* Toast pop */
+[data-sonner-toast],
+[role="status"][data-state="open"] {
+  animation: popIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* ─── Enterprise design system — status, elevation, data-display utilities ──── */
+
+/* Semantic status pill — for tx state, KYC state, sync health. Distinct from
+   brand Badge (which uses primary/secondary/outline for nav counts, plan tiers). */
+.status-pill {
+  @apply inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap;
+}
+.status-pill::before {
+  content: "";
+  @apply w-1.5 h-1.5 rounded-full;
+}
+.status-success { @apply bg-success-muted text-success; }
+.status-success::before { background: hsl(var(--success)); }
+.status-warning { @apply bg-warning-muted text-warning; }
+.status-warning::before { background: hsl(var(--warning)); }
+.status-danger  { @apply bg-danger-muted text-danger; }
+.status-danger::before  { background: hsl(var(--danger)); }
+.status-info    { @apply bg-info-muted text-info; }
+.status-info::before    { background: hsl(var(--info)); }
+.status-pending { @apply bg-pending-muted text-pending; }
+.status-pending::before { background: hsl(var(--pending)); animation: pulse-dot 1.6s ease-in-out infinite; }
+
+/* Structural elevation — replaces ad-hoc box-shadow strings on cards/panels/
+   dropdowns. Use elevation-1 for inline cards, 2 for raised panels/hover,
+   3 for popovers/dropdowns, 4 for modals/dialogs. */
+.elevation-1 { box-shadow: var(--elevation-1); }
+.elevation-2 { box-shadow: var(--elevation-2); }
+.elevation-3 { box-shadow: var(--elevation-3); }
+.elevation-4 { box-shadow: var(--elevation-4); }
+
+/* Financial figures — tabular-nums so columns of numbers align, plus a
+   consistent size/weight scale so every balance/amount in the app matches. */
+.figure-lg { @apply font-mono tabular-nums text-2xl font-semibold tracking-tight; }
+.figure-md { @apply font-mono tabular-nums text-base font-semibold; }
+.figure-sm { @apply font-mono tabular-nums text-xs text-muted-foreground; }
+.figure-delta-positive { @apply text-success; }
+.figure-delta-negative { @apply text-danger; }
+
+/* Skeleton loading — replaces bespoke "animate-pulse bg-muted" combos scattered
+   per-page with one consistent shimmer so loading states look intentional. */
+.skeleton {
+  @apply relative overflow-hidden bg-muted/40 rounded-md;
+}
+.skeleton::after {
+  content: "";
+  position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, hsl(var(--foreground) / 0.06), transparent);
+  animation: shimmer 1.6s ease-in-out infinite;
+  background-size: 200% 100%;
+}
+
+/* Empty state — consistent icon/title/subtitle/action stack used across
+   tables and lists ("No wallets yet", "No transfers yet", etc). */
+.empty-state { @apply flex flex-col items-center justify-center text-center gap-2 py-10 px-4; }
+.empty-state-icon { @apply w-9 h-9 text-muted-foreground/40 mb-1; }
+.empty-state-title { @apply text-sm font-medium text-foreground; }
+.empty-state-subtitle { @apply text-xs text-muted-foreground/70 max-w-[36ch]; }
+
+/* Accessibility — respect OS-level reduced-motion preference. Enterprise
+   software must degrade gracefully for vestibular-sensitive users; this app
+   has 20+ decorative keyframes (glow-pulse, particle-drift, aurora, etc) that
+   should all collapse to instant/near-instant without this. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

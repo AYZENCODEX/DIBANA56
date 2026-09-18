@@ -1,0 +1,35 @@
+-- 084_ayzen_oidc_post_logout_redirect_uris.sql
+-- OIDC Roadmap — Season 3, Phase 6a-d: post_logout_redirect_uri validation.
+-- Run this once in Supabase SQL Editor. Run AFTER 083.
+--
+-- Phase 6a's `end_session_endpoint` (routes/oidc-logout.ts) needs to
+-- validate a caller-supplied `post_logout_redirect_uri` against something
+-- the client actually registered — the exact same "never trust a
+-- user-supplied redirect destination" rule migration 079's sibling file
+-- (lib/oidc-client-validation.ts, Phase 2C) already applies to
+-- `oidc_clients.redirect_uris`. That column is deliberately NOT reused for
+-- this: `redirect_uris` is the Authorization Code flow's callback
+-- allow-list (RFC 6749 §3.1.2 — always an in-app route, e.g.
+-- `https://sylo.ayzen.tech/oidc/callback`), a different, narrower
+-- purpose than RP-Initiated Logout 1.0's `post_logout_redirect_uris`
+-- (typically a public landing/"you're signed out" page, e.g.
+-- `https://sylo.ayzen.tech/`). OIDC RP-Initiated Logout 1.0 §2 models
+-- these as two independent registered lists for exactly this reason;
+-- collapsing them onto one column would either reject every legitimate
+-- post-logout target that isn't also a valid OAuth callback, or force an
+-- operator to add "the home page" to the OAuth callback allow-list just to
+-- make logout work — neither is correct.
+--
+-- Scope discipline (this migration is 6a-d's storage half, not 6a-a/b/c/e
+-- or 6b-6e):
+--   - This is storage/schema ONLY. lib/oidc-clients.ts's row mapper and
+--     lib/oidc-client-validation.ts's exact-match validator (same pass)
+--     are what actually read/check it; routes/oidc-logout.ts (same pass)
+--     is the one caller.
+--   - JSONB array, NOT NULL DEFAULT '[]'::jsonb — identical column shape
+--     to `redirect_uris` (migration 079) for the identical reason: same
+--     exact-match-only semantics, same "an empty list is a valid state
+--     (nothing registered yet -> every post_logout_redirect_uri request
+--     fails closed, never open)" fail-safe default.
+ALTER TABLE oidc_clients
+  ADD COLUMN IF NOT EXISTS post_logout_redirect_uris JSONB NOT NULL DEFAULT '[]'::jsonb;
