@@ -85,20 +85,36 @@ export async function runCompensation(run: WorkflowRun, definition: WorkflowDefi
     const compensationStep = stepById.get(compensationStepId);
     if (!compensationStep) continue; // definition-store.ts's validateDefinition() already guards against this at publish time; defensive only
 
-    // engine.ts's runStep() requires its loop invariant — a PENDING row
-    // already inserted for the step it's about to execute (see that
-    // file's header) — which compensation runs don't get for free from
-    // the main loop (they're not on the forward `current_step_id` path),
-    // so this insert is this call site's own responsibility.
-    await insertStepRetry(run.id, compensationStepId, 1, compensationStep.input);
-    const outcome = await runStep(run, compensationStep, 1);
-    if (!outcome.ok) {
-      state.lastError = outcome.error;
-      await updateCompensationState(run.id, state, state.lastError);
-      return { ok: false, compensated, failedAt: compensationStepId, error: outcome.error };
+    // A compensation worker can crash after the handler returns but before
+    // the state checkpoint is written. Reuse a durable COMPLETED attempt,
+    // otherwise create the next attempt instead of colliding with the unique
+    // (run, step, attempt) key.
+    const priorCompensationRuns = stepRuns.filter((s) => s.stepId === compensationStepId);
+    if (priorCompensationRuns.some((s) => s.status === "COMPLETED")) {
+      state.completedStepIds.push(stepRun.stepId);
+      await updateCompensationState(run.id, state);
+      continue;
     }
+
+    const maxAttempts = compensationStep.retry?.maxAttempts ?? 1;
+    let outcome;
+    let attempt = Math.max(0, ...priorCompensationRuns.map((s) => s.attempt)) + 1;
+    do {
+      await insertStepRetry(run.id, compensationStepId, attempt, compensationStep.input);
+      outcome = await runStep(run, compensationStep, attempt);
+      if (outcome.ok) break;
+      if (outcome.retryable === false || attempt >= maxAttempts) {
+        state.lastError = outcome.error;
+        await updateCompensationState(run.id, state, state.lastError);
+        return { ok: false, compensated, failedAt: compensationStepId, error: outcome.error };
+      }
+      attempt += 1;
+    } while (true);
+
     compensated.push(compensationStepId);
-    state.completedStepIds.push(compensationStepId);
+    // Persist the ORIGINAL forward step id. On resume this is what prevents
+    // the same reversible effect from being compensated twice.
+    state.completedStepIds.push(stepRun.stepId);
     await updateCompensationState(run.id, state);
   }
 

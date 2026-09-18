@@ -19,6 +19,7 @@ export interface RunStepOutcome {
   ok: boolean;
   output?: Record<string, unknown>;
   error?: string;
+  retryable?: boolean;
 }
 
 /** Runs ONE step-attempt to completion (dispatches its action, does not itself handle retry/onFailure/compensation routing — see engine.ts's runStep() for what those layers add on top of this same primitive). */

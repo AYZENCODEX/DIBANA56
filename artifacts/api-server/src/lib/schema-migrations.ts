@@ -2599,4 +2599,12 @@ export const MIGRATIONS = [
     UNIQUE(event_id, consumer)
   )`,
   "CREATE INDEX IF NOT EXISTS idx_event_processing_claim ON event_processing(locked_until)",
+  // 117_ayzen_mega_engine_j7_j13_hardening.sql
+  "ALTER TABLE workflow_run ADD COLUMN IF NOT EXISTS cancellation_reason TEXT",
+  "ALTER TABLE workflow_run ADD COLUMN IF NOT EXISTS cancellation_actor_user_id INTEGER",
+  "ALTER TABLE workflow_run ADD COLUMN IF NOT EXISTS execution_owner TEXT",
+  "ALTER TABLE workflow_run ADD COLUMN IF NOT EXISTS execution_lease_until TIMESTAMP",
+  "ALTER TABLE workflow_run ADD COLUMN IF NOT EXISTS execution_version INTEGER NOT NULL DEFAULT 0",
+  "CREATE INDEX IF NOT EXISTS idx_workflow_run_execution_lease ON workflow_run(execution_lease_until)",
+  "CREATE INDEX IF NOT EXISTS idx_workflow_run_status_resume ON workflow_run(status, next_resume_at)",
 ];

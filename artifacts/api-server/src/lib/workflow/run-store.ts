@@ -18,7 +18,7 @@
 import crypto from "crypto";
 import { z } from "zod/v4";
 import { db, workflowRunTable, workflowStepRunTable } from "@workspace/db";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { getActiveDefinition, getDefinition } from "./definition-store";
 import { assertRunTransition, assertStepTransition, isTerminalRunStatus } from "./state-machine";
 import { recordRunStarted, recordRunTransition, recordRunDuration } from "./metrics";
@@ -114,8 +114,48 @@ function rowToRun(row: typeof workflowRunTable.$inferSelect): WorkflowRun {
     compensationState: row.compensationState ?? undefined,
     compensationAttempts: row.compensationAttempts,
     maxCompensationAttempts: row.maxCompensationAttempts,
+    executionOwner: row.executionOwner ?? undefined,
+    executionLeaseUntil: row.executionLeaseUntil ?? undefined,
+    executionVersion: row.executionVersion,
     createdAt: row.createdAt,
   };
+}
+
+const EXECUTION_LEASE_MS = 60_000;
+
+/**
+ * J8 — atomically claims a run for one worker. This is intentionally a
+ * database compare-and-set rather than an in-memory mutex: scheduler
+ * redelivery, multiple API instances, and deployment restarts all share the
+ * same durable guard.
+ */
+export async function claimRunExecution(runId: string, owner: string, leaseMs = EXECUTION_LEASE_MS): Promise<boolean> {
+  const now = new Date();
+  const until = new Date(now.getTime() + Math.max(5_000, leaseMs));
+  const result = await db.update(workflowRunTable)
+    .set({ executionOwner: owner, executionLeaseUntil: until, executionVersion: sql`${workflowRunTable.executionVersion} + 1`, updatedAt: now })
+    .where(and(
+      eq(workflowRunTable.id, runId),
+      inArray(workflowRunTable.status, ["PENDING", "RUNNING", "WAITING"]),
+      sql`(${workflowRunTable.executionOwner} IS NULL OR ${workflowRunTable.executionLeaseUntil} IS NULL OR ${workflowRunTable.executionLeaseUntil} < ${now})`,
+    ))
+    .returning({ id: workflowRunTable.id });
+  return result.length > 0;
+}
+
+export async function heartbeatRunExecution(runId: string, owner: string, leaseMs = EXECUTION_LEASE_MS): Promise<boolean> {
+  const until = new Date(Date.now() + Math.max(5_000, leaseMs));
+  const result = await db.update(workflowRunTable)
+    .set({ executionLeaseUntil: until, updatedAt: new Date() })
+    .where(and(eq(workflowRunTable.id, runId), eq(workflowRunTable.executionOwner, owner), inArray(workflowRunTable.status, ["RUNNING", "COMPENSATING"])))
+    .returning({ id: workflowRunTable.id });
+  return result.length > 0;
+}
+
+export async function releaseRunExecution(runId: string, owner: string): Promise<void> {
+  await db.update(workflowRunTable)
+    .set({ executionOwner: null, executionLeaseUntil: null, updatedAt: new Date() })
+    .where(and(eq(workflowRunTable.id, runId), eq(workflowRunTable.executionOwner, owner)));
 }
 
 function rowToStepRun(row: typeof workflowStepRunTable.$inferSelect): WorkflowStepRun {
@@ -348,7 +388,7 @@ export async function transitionRun(
 
   const executor = tx ?? db;
   await executor.update(workflowRunTable)
-    .set({ status: to, ...patch, updatedAt: new Date() })
+    .set({ status: to, ...patch, ...(isTerminalRunStatus(to) ? { executionOwner: null, executionLeaseUntil: null } : {}), updatedAt: new Date() })
     .where(eq(workflowRunTable.id, id));
 
   recordRunTransition(to);
@@ -477,10 +517,10 @@ export async function insertStepRetry(runId: string, stepId: string, attempt: nu
  * "Still open" list) — this phase just stops scheduling a dispatch that
  * both sides already know will do nothing.
  */
-export async function cancelRun(id: string): Promise<boolean> {
+export async function cancelRun(id: string, opts?: { reason?: string; actorUserId?: number }): Promise<boolean> {
   const cancellable: WorkflowRunStatus[] = ["PENDING", "RUNNING", "WAITING"];
   const updated = await db.update(workflowRunTable)
-    .set({ status: "CANCELLED", updatedAt: new Date() })
+    .set({ status: "CANCELLED", lastError: opts?.reason ?? "Cancelled by operator", cancellationReason: opts?.reason ?? "Cancelled by operator", ...(opts?.actorUserId === undefined ? {} : { cancellationActorUserId: opts.actorUserId }), updatedAt: new Date() })
     .where(and(eq(workflowRunTable.id, id), inArray(workflowRunTable.status, cancellable)))
     .returning({ id: workflowRunTable.id });
   if (updated.length > 0) {

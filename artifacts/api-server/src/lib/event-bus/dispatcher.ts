@@ -227,6 +227,7 @@ async function recoverOnStartup(): Promise<void> {
 }
 
 let scheduled = false;
+let scheduledTask: { stop: () => void; destroy?: () => void } | undefined;
 
 /**
  * Starts the dispatcher's poll loop. Every 5s by default (same cadence as
@@ -240,6 +241,7 @@ export function startEventBusDispatcher(): void {
 
   const expr = process.env.EVENT_BUS_DISPATCH_CRON ?? "*/5 * * * * *"; // every 5s
   if (!cron.validate(expr)) {
+    scheduled = false;
     logger.warn({ expr }, "EVENT_BUS_DISPATCH_CRON is not a valid cron expression — Event Bus dispatcher disabled");
     logBus.warn(`Event Bus dispatcher disabled: invalid schedule "${expr}"`);
     return;
@@ -249,7 +251,8 @@ export function startEventBusDispatcher(): void {
     logger.error({ err }, "Event Bus startup recovery failed");
     logBus.error(`Event Bus startup recovery failed: ${err?.message ?? err}`);
   }).finally(() => {
-    cron.schedule(expr, () => {
+    if (!scheduled) return;
+    scheduledTask = cron.schedule(expr, () => {
       runEventBusDispatchSweep().catch((err) => {
         logger.error({ err }, "Event Bus dispatch sweep failed");
         logBus.error(`Event Bus dispatch sweep failed: ${err?.message ?? err}`);
@@ -259,4 +262,14 @@ export function startEventBusDispatcher(): void {
     logBus.system(`✅ Event Bus dispatcher scheduled ("${expr}")`);
     logger.info({ expr, workerId: WORKER_ID }, "Event Bus dispatcher scheduled");
   });
+}
+
+/** J13 — stop claiming new work during graceful shutdown. In-flight handler
+ * calls are allowed to finish; durable leases cover a crash before that. */
+export function stopEventBusDispatcher(): void {
+  scheduled = false;
+  scheduledTask?.stop();
+  scheduledTask?.destroy?.();
+  scheduledTask = undefined;
+  logger.info("Event Bus dispatcher stopped");
 }

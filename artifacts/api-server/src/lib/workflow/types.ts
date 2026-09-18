@@ -136,6 +136,9 @@ export interface WorkflowRun {
   compensationState?: Record<string, unknown>;
   compensationAttempts: number;
   maxCompensationAttempts: number;
+  executionOwner?: string;
+  executionLeaseUntil?: Date;
+  executionVersion: number;
   createdAt: Date;
 }
 

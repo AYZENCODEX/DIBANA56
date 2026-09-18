@@ -476,6 +476,7 @@ async function recoverOnStartup(): Promise<void> {
 }
 
 let scheduled = false;
+let scheduledTask: { stop: () => void; destroy?: () => void } | undefined;
 
 /** Starts the scheduler's poll loop. Every 5s by default, same cadence as the Event Bus dispatcher and the mail send queue. */
 export function startSchedulerWorker(): void {
@@ -484,6 +485,7 @@ export function startSchedulerWorker(): void {
 
   const expr = process.env.SCHEDULER_DISPATCH_CRON ?? "*/5 * * * * *"; // every 5s
   if (!cron.validate(expr)) {
+    scheduled = false;
     logger.warn({ expr }, "SCHEDULER_DISPATCH_CRON is not a valid cron expression — Scheduler worker disabled");
     logBus.warn(`Scheduler worker disabled: invalid schedule "${expr}"`);
     return;
@@ -494,7 +496,8 @@ export function startSchedulerWorker(): void {
     logger.error({ err }, "Scheduler startup recovery failed");
     logBus.error(`Scheduler startup recovery failed: ${err?.message ?? err}`);
   }).finally(() => {
-    cron.schedule(expr, () => {
+    if (!scheduled) return;
+    scheduledTask = cron.schedule(expr, () => {
       runSchedulerSweep().catch((err) => {
         logger.error({ err }, "Scheduler sweep failed");
         logBus.error(`Scheduler sweep failed: ${err?.message ?? err}`);
@@ -504,4 +507,15 @@ export function startSchedulerWorker(): void {
     logBus.system(`✅ Scheduler worker scheduled ("${expr}")`);
     logger.info({ expr, workerId: WORKER_ID }, "Scheduler worker scheduled");
   });
+}
+
+/** J13 — stop the poll loop before the HTTP server drains. Claimed jobs are
+ * left with their durable lease; they are recovered by the next worker if
+ * the process exits before they finish. */
+export function stopSchedulerWorker(): void {
+  scheduled = false;
+  scheduledTask?.stop();
+  scheduledTask?.destroy?.();
+  scheduledTask = undefined;
+  logger.info("Scheduler worker stopped");
 }

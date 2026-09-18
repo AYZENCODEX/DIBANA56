@@ -39,12 +39,12 @@ export async function scheduleWorkflowResume(runId: string, resumeAt: Date): Pro
 
 export const WORKFLOW_COMPENSATE_JOB_TYPE = "workflow.compensate";
 
-export async function scheduleWorkflowCompensation(runId: string, delayMs = 0, traceId?: string): Promise<{ id: string }> {
+export async function scheduleWorkflowCompensation(runId: string, delayMs = 0, traceId?: string, attempt = 0): Promise<{ id: string }> {
   return scheduleJob({
     jobType: WORKFLOW_COMPENSATE_JOB_TYPE,
     runAt: new Date(Date.now() + Math.max(0, delayMs)),
     payload: { runId, traceId },
-    idempotencyKey: `workflow.compensate:${runId}:${Date.now() + Math.max(0, delayMs)}`,
+    idempotencyKey: `workflow.compensate:${runId}:${attempt}`,
     correlationId: runId,
     traceId: traceId ?? runId,
     maxAttempts: 1,

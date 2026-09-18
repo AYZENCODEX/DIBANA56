@@ -39,22 +39,25 @@
  * WaitForResume from a handler reuses it with `current_step_id` advanced
  * to that step's `onSuccess`. See parkForWait()'s own doc comment.
  */
-import { getRun, getStepRuns, transitionRun, transitionStepRun, insertStepRetry, advanceCurrentStep, getPendingStepRun, DefinitionNotFoundError, updateCompensationState } from "./run-store";
+import { getRun, getStepRuns, transitionRun, transitionStepRun, insertStepRetry, advanceCurrentStep, getPendingStepRun, DefinitionNotFoundError, updateCompensationState, claimRunExecution, heartbeatRunExecution, releaseRunExecution } from "./run-store";
 import { getDefinition } from "./definition-store";
 import { getAllVariables, setVariable, recordCheckpoint } from "./context";
 import { evaluateCondition } from "./conditions";
-import { dispatchAction, WaitForResume, WorkflowActionDeniedError } from "./actions";
+import { dispatchAction, WaitForResume, WorkflowActionDeniedError, WorkflowActionError, WorkflowStepTimeoutError, UnknownActionTypeError } from "./actions";
 import { authorizeWorkflowAction } from "./authorization";
 import { runCompensation } from "./compensation";
 import { scheduleWorkflowResume, scheduleWorkflowCompensation } from "./scheduler-integration";
 import { nextAttemptDelayMs } from "../scheduler";
 import { UnsafeVariableKeyError } from "./context";
 import { logger } from "../logger";
+import crypto from "crypto";
 import { recordStepDuration } from "./metrics";
 import type { WorkflowActionContext } from "./actions";
 import type { WorkflowAuthorizingEngine, WorkflowSubjectResolver } from "./authorization";
 import type { WorkflowDefinition, WorkflowRun, WorkflowStepDefinition } from "./types";
 import type { RunStepOutcome } from "./engine-types";
+
+const EXECUTION_OWNER = `workflow-${process.pid}-${crypto.randomUUID().slice(0, 8)}`;
 
 /**
  * §22 — what a run needs in order for `WorkflowActionContext.authorize`
@@ -71,8 +74,19 @@ export interface WorkflowRuntimeEnv {
 
 type StepOutcome =
   | { kind: "ok"; output?: Record<string, unknown> }
-  | { kind: "failed"; error: string }
+  | { kind: "failed"; error: string; retryable: boolean }
   | { kind: "waiting"; resumeAt: Date; reason?: string };
+
+function classifyStepError(err: unknown): { message: string; retryable: boolean } {
+  const message = err instanceof Error ? err.message : String(err);
+  if (err instanceof WorkflowActionError) return { message, retryable: err.retryable };
+  if (err instanceof UnknownActionTypeError || err instanceof WorkflowActionDeniedError) {
+    return { message, retryable: false };
+  }
+  // Ordinary handler failures are assumed transient. Domain handlers can
+  // opt out explicitly with WorkflowActionError({ retryable: false }).
+  return { message, retryable: true };
+}
 
 /**
  * Runs ONE step-attempt: finds its already-inserted PENDING row (the
@@ -102,6 +116,8 @@ export async function runStep(run: WorkflowRun, step: WorkflowStepDefinition, at
   await transitionStepRun(stepRun.id, "RUNNING", { startedAt: new Date() });
 
   const variables = await getAllVariables(run.id);
+  const controller = new AbortController();
+  let timeout: ReturnType<typeof setTimeout> | undefined;
   const ctx: WorkflowActionContext = {
     run,
     step,
@@ -110,6 +126,7 @@ export async function runStep(run: WorkflowRun, step: WorkflowStepDefinition, at
     variables,
     context: run.context,
     idempotencyKey: stepRun.idempotencyKey,
+    signal: controller.signal,
     authorize: async (action, resource) => {
       if (!env.policyEngine || !env.resolveSubject) {
         throw new Error(
@@ -128,13 +145,24 @@ export async function runStep(run: WorkflowRun, step: WorkflowStepDefinition, at
   // (see WorkflowMetricsSnapshot.stepDurationMs's own doc comment).
   const actionStartedAt = Date.now();
   try {
-    output = (await dispatchAction(step.type, ctx)) ?? undefined;
+    const action = dispatchAction(step.type, ctx);
+    const timed = step.timeoutMs && step.timeoutMs > 0
+      ? new Promise<Record<string, unknown> | void>((_, reject) => {
+          timeout = setTimeout(() => {
+            controller.abort();
+            reject(new WorkflowStepTimeoutError(step.timeoutMs!));
+          }, step.timeoutMs);
+        })
+      : undefined;
+    output = (await (timed ? Promise.race([action, timed]) : action)) ?? undefined;
   } catch (err) {
     if (err instanceof WaitForResume) throw err; // waiting, not settled — no duration sample (see this function's own doc comment)
     recordStepDuration(Date.now() - actionStartedAt);
-    const message = err instanceof Error ? err.message : String(err);
-    await transitionStepRun(stepRun.id, "FAILED", { error: message, finishedAt: new Date() });
-    return { ok: false, error: message };
+    const failure = classifyStepError(err);
+    await transitionStepRun(stepRun.id, "FAILED", { error: failure.message, finishedAt: new Date() });
+    return { ok: false, error: failure.message, retryable: failure.retryable };
+  } finally {
+    if (timeout) clearTimeout(timeout);
   }
   recordStepDuration(Date.now() - actionStartedAt);
 
@@ -165,7 +193,7 @@ export async function runStep(run: WorkflowRun, step: WorkflowStepDefinition, at
 async function runStepSafely(run: WorkflowRun, step: WorkflowStepDefinition, attempt: number, env: WorkflowRuntimeEnv): Promise<StepOutcome> {
   try {
     const result = await runStep(run, step, attempt, env);
-    return result.ok ? { kind: "ok", output: result.output } : { kind: "failed", error: result.error ?? "unknown error" };
+    return result.ok ? { kind: "ok", output: result.output } : { kind: "failed", error: result.error ?? "unknown error", retryable: result.retryable !== false };
   } catch (err) {
     if (err instanceof WaitForResume) return { kind: "waiting", resumeAt: err.resumeAt, reason: err.reason };
     throw err; // anything else escaping runStep() is a bug in runStep() itself, which is supposed to convert every non-wait failure into `{ ok: false }` — surface it rather than silently swallow.
@@ -280,7 +308,7 @@ async function failOrCompensate(run: WorkflowRun, definition: WorkflowDefinition
   }
 
   await transitionRun(run.id, "COMPENSATING", { lastError });
-  await scheduleWorkflowCompensation(run.id, 0, run.traceId);
+  await scheduleWorkflowCompensation(run.id, 0, run.traceId, 0);
   await resumeCompensation(run.id, definition, env);
 }
 
@@ -309,7 +337,7 @@ export async function resumeCompensation(runId: string, definition?: WorkflowDef
         attempts,
         lastError: `compensation failed at step "${result.failedAt}": ${result.error}`,
       }, `compensation failed at step "${result.failedAt}": ${result.error}`);
-      await scheduleWorkflowCompensation(runId, nextAttemptDelayMs(attempts), attempted.traceId);
+      await scheduleWorkflowCompensation(runId, nextAttemptDelayMs(attempts), attempted.traceId, attempts);
     } else {
       await transitionRun(runId, "DEAD_LETTER", { lastError: `compensation failed at step "${result.failedAt}": ${result.error}` });
     }
@@ -321,7 +349,7 @@ export async function resumeCompensation(runId: string, definition?: WorkflowDef
         attempts,
         lastError: message,
       }, message);
-      await scheduleWorkflowCompensation(runId, nextAttemptDelayMs(attempts), attempted.traceId);
+      await scheduleWorkflowCompensation(runId, nextAttemptDelayMs(attempts), attempted.traceId, attempts);
     } else {
       await transitionRun(runId, "DEAD_LETTER", { lastError: message });
     }
@@ -344,12 +372,22 @@ export async function resumeCompensation(runId: string, definition?: WorkflowDef
 export async function executeRun(runId: string, env: WorkflowRuntimeEnv = {}): Promise<void> {
   const initial = await getRun(runId);
   if (!initial) throw new Error(`executeRun: run "${runId}" not found`);
+  if (!(await claimRunExecution(runId, EXECUTION_OWNER))) return;
+
+  const heartbeat = setInterval(() => {
+    heartbeatRunExecution(runId, EXECUTION_OWNER).catch((err) =>
+      logger.warn({ runId, err }, "Workflow execution lease heartbeat failed"),
+    );
+  }, 15_000);
+  try {
   if (initial.status === "PENDING") {
     await transitionRun(runId, "RUNNING", { startedAt: new Date() });
+  } else if (initial.status === "WAITING") {
+    await transitionRun(runId, "RUNNING", { nextResumeAt: null });
   }
 
   const first = await getRun(runId);
-  if (!first || first.status !== "RUNNING") return; // WAITING/terminal/gone — nothing to drive; resumeRun() is the entry point for a parked run
+  if (!first || first.status !== "RUNNING") return; // terminal/gone — nothing to drive
 
   const definition = await getDefinition(first.definitionId, first.definitionVersion);
   if (!definition) throw new DefinitionNotFoundError(first.definitionId, first.definitionVersion);
@@ -460,7 +498,7 @@ export async function executeRun(runId: string, env: WorkflowRuntimeEnv = {}): P
 
     // outcome.kind === "failed"
     const maxAttempts = step.retry?.maxAttempts ?? 1;
-    if (pending.attempt < maxAttempts) {
+    if (outcome.retryable && pending.attempt < maxAttempts) {
       const backoffMs = step.retry?.backoffMs ?? nextAttemptDelayMs(pending.attempt);
       await insertStepRetry(runId, step.id, pending.attempt + 1, step.input);
       await parkForWait(run, new Date(Date.now() + Math.max(0, backoffMs)), step.id, "step retry backoff");
@@ -474,6 +512,10 @@ export async function executeRun(runId: string, env: WorkflowRuntimeEnv = {}): P
 
     await failOrCompensate(run, definition, env, outcome.error);
     return;
+  }
+  } finally {
+    clearInterval(heartbeat);
+    await releaseRunExecution(runId, EXECUTION_OWNER);
   }
 }
 
@@ -500,6 +542,8 @@ export async function resumeRun(runId: string, env: WorkflowRuntimeEnv = {}): Pr
   // be cut off by the main loop's own H2 check a moment later.
   if (await checkRunTimeout(run)) return;
 
-  await transitionRun(runId, "RUNNING", { nextResumeAt: null });
+  // executeRun owns the WAITING -> RUNNING transition after it wins the
+  // durable lease. This closes the race where two wakeups both transition
+  // the run before either execution loop can claim it.
   await executeRun(runId, env);
 }

@@ -76,6 +76,8 @@ export const workflowRunTable = pgTable("workflow_run", {
 
   maxRuntimeMs: bigint("max_runtime_ms", { mode: "number" }),
   lastError: text("last_error"),
+  cancellationReason: text("cancellation_reason"),
+  cancellationActorUserId: integer("cancellation_actor_user_id"),
 
   startedAt: timestamp("started_at"),
   completedAt: timestamp("completed_at"),
@@ -85,6 +87,12 @@ export const workflowRunTable = pgTable("workflow_run", {
   compensationState: jsonb("compensation_state").$type<Record<string, unknown>>(),
   compensationAttempts: integer("compensation_attempts").notNull().default(0),
   maxCompensationAttempts: integer("max_compensation_attempts").notNull().default(3),
+  // J8 — a durable execution lease prevents duplicate workflow loops after
+  // concurrent wakeups. The lease expires on worker loss and is renewed by
+  // the execution loop while the owner is alive.
+  executionOwner: text("execution_owner"),
+  executionLeaseUntil: timestamp("execution_lease_until"),
+  executionVersion: integer("execution_version").notNull().default(0),
 
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -93,6 +101,7 @@ export const workflowRunTable = pgTable("workflow_run", {
   wakeIdx: index("idx_workflow_run_wake").on(t.status, t.nextResumeAt),
   correlationIdx: index("idx_workflow_run_correlation").on(t.correlationId),
   definitionIdx: index("idx_workflow_run_definition").on(t.definitionId),
+  executionLeaseIdx: index("idx_workflow_run_execution_lease").on(t.executionLeaseUntil),
 }));
 
 export type WorkflowRunRow = typeof workflowRunTable.$inferSelect;

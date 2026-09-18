@@ -53,6 +53,23 @@ export class UnknownActionTypeError extends Error {
 }
 
 /**
+ * J7 — action handlers can classify failures without coupling the workflow
+ * engine to transport- or domain-specific error classes. Fail-closed means
+ * an explicitly permanent failure is never retried by the engine.
+ */
+export class WorkflowActionError extends Error {
+  readonly retryable: boolean;
+  readonly code?: string;
+
+  constructor(message: string, opts: { retryable?: boolean; code?: string } = {}) {
+    super(message);
+    this.name = "WorkflowActionError";
+    this.retryable = opts.retryable ?? true;
+    this.code = opts.code;
+  }
+}
+
+/**
  * §22 — thrown by a handler's own `ctx.authorize()` call site (handler's
  * choice, not something dispatchAction() infers) when the Policy Engine
  * returned anything other than ALLOW. engine.ts treats this exactly like
@@ -82,6 +99,13 @@ export class WaitForResume {
   constructor(public readonly resumeAt: Date, public readonly reason?: string) {}
 }
 
+export class WorkflowStepTimeoutError extends WorkflowActionError {
+  constructor(timeoutMs: number) {
+    super(`workflow step exceeded timeout of ${timeoutMs}ms`, { retryable: true, code: "STEP_TIMEOUT" });
+    this.name = "WorkflowStepTimeoutError";
+  }
+}
+
 /** Handed to a handler for one step-attempt's execution. Nothing here is mutable by the handler beyond returning an output/throwing — same "handler is a pure orchestration target, not given raw DB access" boundary job-registry.ts's JobHandler draws for scheduler jobs. */
 export interface WorkflowActionContext {
   run: WorkflowRun;
@@ -95,6 +119,9 @@ export interface WorkflowActionContext {
   context: WorkflowContext;
   /** `${runId}:${stepId}:${attempt}` (or this step's own coarser key, if it supplied one) — §26. Pass through to any downstream call whose own effect must not be duplicated on a redelivered/retried dispatch. */
   idempotencyKey: string;
+  /** Aborted when the declared step timeout elapses. Handlers doing external
+   * work should pass this signal to their client where supported. */
+  signal: AbortSignal;
   /**
    * §22 — the PEP call. A handler that changes a protected resource
    * SHOULD call this before doing so and throw WorkflowActionDeniedError
