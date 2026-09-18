@@ -32,6 +32,7 @@ const counters = {
   jobsRetried: 0,
   jobsDeadLettered: 0,
   workerFailures: 0,
+  retryStormThrottled: 0,
 };
 
 let workerActive = false;
@@ -46,6 +47,7 @@ export function recordJobExecuted(): void { counters.jobsExecuted++; }
 export function recordJobFailed(): void { counters.jobsFailed++; }
 export function recordJobRetried(): void { counters.jobsRetried++; }
 export function recordJobDeadLettered(): void { counters.jobsDeadLettered++; }
+export function recordRetryStormThrottled(): void { counters.retryStormThrottled++; }
 
 /** worker.ts calls this once per sweep tick — start and finish, so a hung sweep (still `true` well past the poll cadence) is itself a DEGRADED signal engine-health.ts can read. */
 export function recordWorkerSweepStart(): void { workerActive = true; workerLastHeartbeatAt = new Date(); }

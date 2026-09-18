@@ -133,6 +133,7 @@ export interface SchedulerMetricsSnapshot {
   jobsRetried: number;
   jobsDeadLettered: number;
   workerFailures: number;
+  retryStormThrottled: number;
   workerActive: boolean;
   workerLastHeartbeatAt: string | null;
   /** §39 Latency metrics, Part G1 — `scheduler_lag`: how late a dispatch

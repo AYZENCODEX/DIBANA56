@@ -2613,4 +2613,16 @@ export const MIGRATIONS = [
   // the claim query.
   "ALTER TABLE scheduled_job ADD COLUMN IF NOT EXISTS pause_reason TEXT",
   "CREATE INDEX IF NOT EXISTS idx_scheduled_job_status_run_at ON scheduled_job(status, run_at)",
+  // 119_ayzen_mega_engine_j10_j15_operational_hardening.sql
+  // Retention uses bounded batches and these indexes keep each batch from
+  // scanning the full operational history. Audit data is intentionally absent:
+  // governed audit retention is never handled by Mega Engine cleanup.
+  "CREATE INDEX IF NOT EXISTS idx_event_outbox_retention ON event_outbox(status, published_at, id)",
+  "CREATE INDEX IF NOT EXISTS idx_event_processed_retention ON event_processed(processed_at, id)",
+  "CREATE INDEX IF NOT EXISTS idx_event_processing_retention ON event_processing(updated_at, id)",
+  "CREATE INDEX IF NOT EXISTS idx_event_dead_letter_retention ON event_dead_letter(status, resolved_at, id)",
+  "CREATE INDEX IF NOT EXISTS idx_scheduled_job_attempt_retention ON scheduled_job_attempt(started_at, id)",
+  "CREATE INDEX IF NOT EXISTS idx_scheduled_job_dead_letter_retention ON scheduled_job_dead_letter(status, resolved_at, id)",
+  "CREATE INDEX IF NOT EXISTS idx_scheduled_job_terminal_retention ON scheduled_job(status, updated_at, id)",
+  "CREATE INDEX IF NOT EXISTS idx_workflow_run_terminal_retention ON workflow_run(status, updated_at, id)",
 ];

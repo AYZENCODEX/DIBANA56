@@ -2,8 +2,10 @@ import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { logger } from "../logger";
 import { logBus } from "../log-bus";
-import { startEventBusDispatcher, stopEventBusDispatcher } from "../event-bus";
-import { startSchedulerWorker, stopSchedulerWorker } from "../scheduler";
+import {
+  startEventBusDispatcher, stopEventBusDispatcher, waitForEventBusIdle,
+} from "../event-bus";
+import { startSchedulerWorker, stopSchedulerWorker, waitForSchedulerIdle } from "../scheduler";
 import {
   executeRun,
   getRun,
@@ -41,6 +43,7 @@ export function validateMegaEngineConfiguration(): void {
  */
 export async function startMegaEngine(): Promise<void> {
   if (started || stopping) return;
+  stopping = false;
   validateMegaEngineConfiguration();
   await db.execute(sql`SELECT 1`);
 
@@ -76,7 +79,12 @@ export async function stopMegaEngine(): Promise<void> {
   stopping = true;
   stopEventBusDispatcher();
   stopSchedulerWorker();
+  const [eventIdle, schedulerIdle] = await Promise.all([
+    waitForEventBusIdle(),
+    waitForSchedulerIdle(),
+  ]);
   started = false;
   logBus.system("Mega Engine stopped accepting new work");
-  logger.info("Mega Engine stopped");
+  logger.info({ eventIdle, schedulerIdle }, "Mega Engine stopped");
+  stopping = false;
 }

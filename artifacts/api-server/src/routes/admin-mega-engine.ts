@@ -50,7 +50,10 @@
 import { Router, type IRouter } from "express";
 import { requireDev } from "../middlewares/auth";
 import { logger } from "../lib/logger";
-import { getEngineHealth, RETENTION_WINDOWS_MS, runRetentionSweep, getEngineLinks, writeEngineAudit } from "../lib/mega-engine";
+import {
+  getEngineHealth, RETENTION_WINDOWS_MS, runRetentionSweep, getEngineLinks,
+  getEngineOperationsSnapshot, getProductionReadinessAudit, writeEngineAudit,
+} from "../lib/mega-engine";
 import {
   getWorkflowMetrics,
   listRuns, getRun, getStepRuns, cancelRun,
@@ -109,6 +112,17 @@ router.get("/admin/mega-engine/metrics", requireDev, (_req, res): void => {
   });
 });
 
+// ── GET /admin/mega-engine/operations — live J10 operator snapshot ─────────
+router.get("/admin/mega-engine/operations", requireDev, async (_req, res): Promise<void> => {
+  res.json(await getEngineOperationsSnapshot());
+});
+
+// ── GET /admin/mega-engine/readiness — J15 production readiness audit ───────
+router.get("/admin/mega-engine/readiness", requireDev, async (_req, res): Promise<void> => {
+  const audit = await getProductionReadinessAudit();
+  res.status(audit.ready ? 200 : 503).json(audit);
+});
+
 // ── GET /admin/mega-engine/links/:correlationId — cross-engine trace view ──
 router.get("/admin/mega-engine/links/:correlationId", requireDev, async (req, res): Promise<void> => {
   const correlationId = req.params.correlationId.trim();
@@ -157,6 +171,10 @@ router.post("/admin/mega-engine/dead-letters/:engine/:id/replay", requireDev, as
 
   try {
     const result = engine === "events" ? await replayEventDeadLetter(id) : await replayJobDeadLetter(id);
+    await writeEngineAudit({
+      action: "dead_letter.replayed.admin",
+      metadata: { engine, deadLetterId: id, actorUserId: req.user?.userId, result },
+    });
     logger.info({ engine, id, actorId: req.user?.userId, result }, "mega_engine.dead_letter.admin_replayed");
     res.json({ engine, id, ...result });
   } catch (err) {
@@ -187,6 +205,10 @@ router.post("/admin/mega-engine/dead-letters/:engine/:id/discard", requireDev, a
   // if it's still safe to" posture scheduler/job-store.ts's cancelJob()
   // uses, so there's nothing here to distinguish/report beyond success.
   if (engine === "events") await discardEventDeadLetter(id); else await discardJobDeadLetter(id);
+  await writeEngineAudit({
+    action: "dead_letter.discarded.admin",
+    metadata: { engine, deadLetterId: id, actorUserId: req.user?.userId },
+  });
   logger.info({ engine, id, actorId: req.user?.userId }, "mega_engine.dead_letter.admin_discarded");
   res.json({ engine, id, status: "DISCARDED" });
 });
@@ -263,13 +285,13 @@ router.post("/admin/mega-engine/workflow/runs/:id/cancel", requireDev, async (re
 router.post("/admin/mega-engine/jobs/:id/pause", requireDev, async (req, res): Promise<void> => {
   const reason = typeof req.body?.reason === "string" ? req.body.reason.slice(0, 500) : "Paused by operator";
   const paused = await pauseJob(req.params.id, reason);
-  if (paused) await writeEngineAudit({ action: "job.paused.admin", metadata: { jobId: req.params.id, reason } });
+  if (paused) await writeEngineAudit({ action: "job.paused.admin", metadata: { jobId: req.params.id, reason, actorUserId: req.user?.userId } });
   res.json({ jobId: req.params.id, paused });
 });
 
 router.post("/admin/mega-engine/jobs/:id/resume", requireDev, async (req, res): Promise<void> => {
   const resumed = await resumeJob(req.params.id);
-  if (resumed) await writeEngineAudit({ action: "job.resumed.admin", metadata: { jobId: req.params.id } });
+  if (resumed) await writeEngineAudit({ action: "job.resumed.admin", metadata: { jobId: req.params.id, actorUserId: req.user?.userId } });
   res.json({ jobId: req.params.id, resumed });
 });
 
@@ -307,6 +329,10 @@ router.post("/admin/mega-engine/retention/run", requireDev, async (req, res): Pr
   // doesn't throw for "nothing to delete", only for an actual DB error,
   // which Express 5 already forwards to the default error handler).
   const result = await runRetentionSweep();
+  await writeEngineAudit({
+    action: "retention.sweep.admin",
+    metadata: { actorUserId: req.user?.userId, result },
+  });
   logger.info({ actorId: req.user?.userId, result }, "mega_engine.retention_sweep.admin_triggered");
   res.json(result);
 });

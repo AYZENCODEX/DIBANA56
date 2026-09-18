@@ -11,18 +11,28 @@ import { sql } from "drizzle-orm";
 export interface EngineLinks {
   correlationId: string;
   events: unknown[];
+  workflows: unknown[];
   jobs: unknown[];
   audits: unknown[];
 }
 
 export async function getEngineLinks(correlationId: string): Promise<EngineLinks> {
-  const [events, jobs, audits] = await Promise.all([
+  const [events, workflows, jobs, audits] = await Promise.all([
     db.execute(sql`
       SELECT id, event_type, event_version, status, trace_id, causation_id,
              occurred_at, published_at, last_error
       FROM event_outbox
       WHERE correlation_id = ${correlationId}
       ORDER BY occurred_at DESC
+      LIMIT 200
+    `),
+    db.execute(sql`
+      SELECT id, definition_id, definition_version, status, current_step_id,
+             trace_id, causation_id, created_at, started_at, completed_at,
+             last_error
+      FROM workflow_run
+      WHERE correlation_id = ${correlationId}
+      ORDER BY created_at DESC
       LIMIT 200
     `),
     db.execute(sql`
@@ -47,6 +57,7 @@ export async function getEngineLinks(correlationId: string): Promise<EngineLinks
   return {
     correlationId,
     events: events.rows,
+    workflows: workflows.rows,
     jobs: jobs.rows,
     audits: audits.rows,
   };

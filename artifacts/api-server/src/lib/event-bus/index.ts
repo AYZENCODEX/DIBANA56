@@ -24,4 +24,7 @@ export { hasProcessed, markProcessed } from "./idempotency";
 export { nextAttemptDelayMs, shouldDeadLetter, MAX_DISPATCH_ATTEMPTS } from "./retry";
 export { moveToDeadLetter, listDeadLetters, replayDeadLetter, discardDeadLetter } from "./dead-letter";
 export { getEventBusMetrics } from "./metrics";
-export { runEventBusDispatchSweep, startEventBusDispatcher, stopEventBusDispatcher } from "./dispatcher";
+export {
+  runEventBusDispatchSweep, startEventBusDispatcher, stopEventBusDispatcher,
+  isEventBusDispatchInFlight, waitForEventBusIdle,
+} from "./dispatcher";

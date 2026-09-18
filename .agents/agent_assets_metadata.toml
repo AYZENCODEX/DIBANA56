@@ -1,0 +1,16 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "hBLk7A6C-kzSp5a9xInBH"
+uri = "file://ayzen-codebase-source.zip"
+type = "unspecified"
+title = "AYZEN source codebase"
+description = "Project source archive excluding all dist and node_modules directories."
+logical_id = "a02177db-0e70-43ff-8ffd-2d23d6c16c56"
+content_hash = "sha256:801959547a217d62b18812c036421b0d10135102a17227cd920c67fa01c198fa"
+size = 11116969
+mtime_ms = 1789758784993
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:458782ef-1445-42c8-894c-8e6a5f9f8903/a02177db-0e70-43ff-8ffd-2d23d6c16c56/9d368b27-405f-43df-8b32-2a0cc2573a04"
+storage_version_token = "1789758791860188"
+content_type = "application/octet-stream"

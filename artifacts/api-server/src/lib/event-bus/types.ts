@@ -97,6 +97,9 @@ export interface EventBusMetricsSnapshot {
   retried: number;
   deadLettered: number;
   unknownType: number;
+  retryStormThrottled: number;
+  workerActive: boolean;
+  workerLastHeartbeatAt: string | null;
   /** §39 Latency metrics, Part G1 — `event_publish_latency`: how long
    *  publisher.ts's own outbox INSERT took (payload validation excluded —
    *  see that file's own recording site's comment). */

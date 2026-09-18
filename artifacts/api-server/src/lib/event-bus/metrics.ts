@@ -26,7 +26,11 @@ const counters = {
   retried: 0,
   deadLettered: 0,
   unknownType: 0,
+  retryStormThrottled: 0,
 };
+
+let workerActive = false;
+let workerLastHeartbeatAt: Date | null = null;
 
 // Part G1 — §39 Latency metrics (`event_publish_latency`/`event_handler_latency`).
 const publishLatency = createLatencyHistogram();
@@ -38,6 +42,9 @@ export function recordHandlerFailure(): void { counters.handlerFailures++; }
 export function recordRetried(): void { counters.retried++; }
 export function recordDeadLettered(): void { counters.deadLettered++; }
 export function recordUnknownType(): void { counters.unknownType++; }
+export function recordRetryStormThrottled(): void { counters.retryStormThrottled++; }
+export function recordWorkerSweepStart(): void { workerActive = true; workerLastHeartbeatAt = new Date(); }
+export function recordWorkerSweepEnd(): void { workerActive = false; workerLastHeartbeatAt = new Date(); }
 
 /** publisher.ts's publishEvent() calls this once per call, around the
  *  outbox INSERT itself — §39's `event_publish_latency`. */
@@ -51,5 +58,7 @@ export function getEventBusMetrics(): EventBusMetricsSnapshot {
     ...counters,
     publishLatencyMs: publishLatency.snapshot(),
     handlerLatencyMs: handlerLatency.snapshot(),
+    workerActive,
+    workerLastHeartbeatAt: workerLastHeartbeatAt ? workerLastHeartbeatAt.toISOString() : null,
   };
 }

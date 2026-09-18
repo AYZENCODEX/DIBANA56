@@ -42,19 +42,14 @@
  * real config knob exists, `WORKFLOW_RUN_RETENTION_MS` below is that
  * knob's V1 placeholder, not a permanent hardcode.
  *
- * Every sweep is a plain, unbounded `DELETE ... WHERE` — no batching, no
- * pagination — the same "simple counts, not sophisticated" posture
- * every other Part E1/E2 file in this phase already has for itself; a
- * future phase can add batching once there's an actual table large
- * enough to need it.
+ * Cleanup is deliberately batched. A retention job must not hold a lock for
+ * the entire operational history or compete with the live engines.
  */
 import {
   db,
-  eventOutboxTable, eventProcessedTable, eventDeadLetterTable,
-  scheduledJobAttemptTable, scheduledJobDeadLetterTable,
   workflowRunTable, workflowStepRunTable, workflowCheckpointTable, workflowVariableTable,
 } from "@workspace/db";
-import { and, eq, inArray, lt } from "drizzle-orm";
+import { and, eq, inArray, lt, sql, type SQL } from "drizzle-orm";
 import { logger } from "../logger";
 import { logBus } from "../log-bus";
 import { registerJobHandler, scheduleCron, hasActiveJobForCorrelation, type ScheduledJob } from "../scheduler";
@@ -68,13 +63,19 @@ export const RETENTION_WINDOWS_MS = {
   eventOutboxPublished: 3 * DAY_MS,
   /** "compact retention" — event_processed is a pure (event_id, consumer) idempotency-dedupe record; once past any plausible redelivery window it has no further use. */
   eventProcessed: 7 * DAY_MS,
+  /** Processing claims are safe to remove after the claim lease is long expired. */
+  eventProcessing: 2 * DAY_MS,
   /** "longer operational retention" — both DLQ tables; only REPLAYED/DISCARDED rows (a still-PENDING dead letter is exactly what an operator is expected to still be looking at). */
   deadLetterResolved: 90 * DAY_MS,
   /** "configurable business retention" — see header re: V1 placeholder. Only terminal runs; cutoff is `updated_at`, not `completed_at`, because COMPLETED is currently the only run status that engine.ts sets `completedAt` on (FAILED/CANCELLED/COMPENSATED/DEAD_LETTER/TIMED_OUT don't) while every transitionRun() call — terminal or not — always bumps `updated_at` in the same UPDATE (see run-store.ts's transitionRun()), making it the one cutoff column reliably set for all six terminal statuses alike. */
   workflowRunTerminal: 180 * DAY_MS,
   /** "short operational retention" — per-attempt log rows, independent of whether their parent job (one-time or recurring) is itself still active. */
   scheduledJobAttempt: 14 * DAY_MS,
+  /** Completed one-time jobs remain available for business inspection for a longer window. */
+  scheduledJobTerminal: 180 * DAY_MS,
 } as const;
+
+export const RETENTION_BATCH_SIZE = Math.max(1, Number(process.env.ENGINE_RETENTION_BATCH_SIZE ?? 500));
 
 /** state-machine.ts's own terminal set (`RUN_TRANSITIONS[status].length === 0`) — duplicated here as a literal list because this file deletes by SQL WHERE, not by calling isTerminalRunStatus() per row. */
 const TERMINAL_RUN_STATUSES: WorkflowRunStatus[] = ["COMPLETED", "FAILED", "CANCELLED", "TIMED_OUT", "COMPENSATED", "DEAD_LETTER"];
@@ -82,14 +83,40 @@ const TERMINAL_RUN_STATUSES: WorkflowRunStatus[] = ["COMPLETED", "FAILED", "CANC
 export interface RetentionSweepResult {
   eventOutboxDeleted: number;
   eventProcessedDeleted: number;
+  eventProcessingDeleted: number;
   eventDeadLetterDeleted: number;
   scheduledJobDeadLetterDeleted: number;
   scheduledJobAttemptDeleted: number;
+  scheduledJobDeleted: number;
   workflowRunsDeleted: number;
   workflowStepRunsDeleted: number;
   workflowCheckpointsDeleted: number;
   workflowVariablesDeleted: number;
   ranAt: string;
+}
+
+async function deleteBatch(table: string, where: SQL): Promise<number> {
+  const result = await db.execute(sql`
+    WITH doomed AS (
+      SELECT id FROM ${sql.raw(table)}
+      WHERE ${where}
+      ORDER BY id
+      LIMIT ${RETENTION_BATCH_SIZE}
+    )
+    DELETE FROM ${sql.raw(table)}
+    WHERE id IN (SELECT id FROM doomed)
+    RETURNING id
+  `);
+  return result.rows.length;
+}
+
+async function deleteUntilDrained(table: string, where: SQL): Promise<number> {
+  let total = 0;
+  while (true) {
+    const removed = await deleteBatch(table, where);
+    total += removed;
+    if (removed < RETENTION_BATCH_SIZE) return total;
+  }
 }
 
 /**
@@ -102,35 +129,24 @@ export interface RetentionSweepResult {
 export async function runRetentionSweep(now: Date = new Date()): Promise<RetentionSweepResult> {
   const outboxCutoff = new Date(now.getTime() - RETENTION_WINDOWS_MS.eventOutboxPublished);
   const processedCutoff = new Date(now.getTime() - RETENTION_WINDOWS_MS.eventProcessed);
+  const processingCutoff = new Date(now.getTime() - RETENTION_WINDOWS_MS.eventProcessing);
   const deadLetterCutoff = new Date(now.getTime() - RETENTION_WINDOWS_MS.deadLetterResolved);
   const workflowRunCutoff = new Date(now.getTime() - RETENTION_WINDOWS_MS.workflowRunTerminal);
   const attemptCutoff = new Date(now.getTime() - RETENTION_WINDOWS_MS.scheduledJobAttempt);
+  const jobCutoff = new Date(now.getTime() - RETENTION_WINDOWS_MS.scheduledJobTerminal);
 
-  const [eventOutboxDeleted, eventProcessedDeleted, eventDeadLetterDeleted, scheduledJobDeadLetterDeleted, scheduledJobAttemptDeleted] = await Promise.all([
-    db.delete(eventOutboxTable)
-      .where(and(eq(eventOutboxTable.status, "PUBLISHED"), lt(eventOutboxTable.publishedAt, outboxCutoff)))
-      .returning({ id: eventOutboxTable.id })
-      .then((rows) => rows.length),
-
-    db.delete(eventProcessedTable)
-      .where(lt(eventProcessedTable.processedAt, processedCutoff))
-      .returning({ id: eventProcessedTable.id })
-      .then((rows) => rows.length),
-
-    db.delete(eventDeadLetterTable)
-      .where(and(inArray(eventDeadLetterTable.status, ["REPLAYED", "DISCARDED"]), lt(eventDeadLetterTable.resolvedAt, deadLetterCutoff)))
-      .returning({ id: eventDeadLetterTable.id })
-      .then((rows) => rows.length),
-
-    db.delete(scheduledJobDeadLetterTable)
-      .where(and(inArray(scheduledJobDeadLetterTable.status, ["REPLAYED", "DISCARDED"]), lt(scheduledJobDeadLetterTable.resolvedAt, deadLetterCutoff)))
-      .returning({ id: scheduledJobDeadLetterTable.id })
-      .then((rows) => rows.length),
-
-    db.delete(scheduledJobAttemptTable)
-      .where(lt(scheduledJobAttemptTable.startedAt, attemptCutoff))
-      .returning({ id: scheduledJobAttemptTable.id })
-      .then((rows) => rows.length),
+  const [
+    eventOutboxDeleted, eventProcessedDeleted, eventProcessingDeleted,
+    eventDeadLetterDeleted, scheduledJobDeadLetterDeleted, scheduledJobAttemptDeleted,
+    scheduledJobDeleted,
+  ] = await Promise.all([
+    deleteUntilDrained("event_outbox", sql`status = 'PUBLISHED' AND published_at < ${outboxCutoff}`),
+    deleteUntilDrained("event_processed", sql`processed_at < ${processedCutoff}`),
+    deleteUntilDrained("event_processing", sql`updated_at < ${processingCutoff}`),
+    deleteUntilDrained("event_dead_letter", sql`status IN ('REPLAYED', 'DISCARDED') AND resolved_at < ${deadLetterCutoff}`),
+    deleteUntilDrained("scheduled_job_dead_letter", sql`status IN ('REPLAYED', 'DISCARDED') AND resolved_at < ${deadLetterCutoff}`),
+    deleteUntilDrained("scheduled_job_attempt", sql`started_at < ${attemptCutoff}`),
+    deleteUntilDrained("scheduled_job", sql`status IN ('COMPLETED', 'FAILED', 'CANCELLED', 'DEAD_LETTER') AND updated_at < ${jobCutoff}`),
   ]);
 
   // workflow_run's three child tables (step_run/checkpoint/variable) have
@@ -142,7 +158,8 @@ export async function runRetentionSweep(now: Date = new Date()): Promise<Retenti
   const { workflowRunsDeleted, workflowStepRunsDeleted, workflowCheckpointsDeleted, workflowVariablesDeleted } = await db.transaction(async (trx) => {
     const expiredRuns = await trx.select({ id: workflowRunTable.id })
       .from(workflowRunTable)
-      .where(and(inArray(workflowRunTable.status, TERMINAL_RUN_STATUSES), lt(workflowRunTable.updatedAt, workflowRunCutoff)));
+      .where(and(inArray(workflowRunTable.status, TERMINAL_RUN_STATUSES), lt(workflowRunTable.updatedAt, workflowRunCutoff)))
+      .limit(RETENTION_BATCH_SIZE);
     const runIds = expiredRuns.map((r) => r.id);
 
     if (runIds.length === 0) {
@@ -163,13 +180,14 @@ export async function runRetentionSweep(now: Date = new Date()): Promise<Retenti
   });
 
   const result: RetentionSweepResult = {
-    eventOutboxDeleted, eventProcessedDeleted, eventDeadLetterDeleted, scheduledJobDeadLetterDeleted, scheduledJobAttemptDeleted,
+    eventOutboxDeleted, eventProcessedDeleted, eventProcessingDeleted,
+    eventDeadLetterDeleted, scheduledJobDeadLetterDeleted, scheduledJobAttemptDeleted, scheduledJobDeleted,
     workflowRunsDeleted, workflowStepRunsDeleted, workflowCheckpointsDeleted, workflowVariablesDeleted,
     ranAt: now.toISOString(),
   };
 
   logger.info(result, "mega_engine.retention_sweep.completed");
-  const totalDeleted = eventOutboxDeleted + eventProcessedDeleted + eventDeadLetterDeleted + scheduledJobDeadLetterDeleted + scheduledJobAttemptDeleted + workflowRunsDeleted;
+  const totalDeleted = eventOutboxDeleted + eventProcessedDeleted + eventProcessingDeleted + eventDeadLetterDeleted + scheduledJobDeadLetterDeleted + scheduledJobAttemptDeleted + scheduledJobDeleted + workflowRunsDeleted;
   if (totalDeleted > 0) {
     logBus.system(`Mega Engine: retention sweep deleted ${totalDeleted} row(s) — ${JSON.stringify(result)}`);
   }

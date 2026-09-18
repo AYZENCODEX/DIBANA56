@@ -42,11 +42,17 @@ import { isRegistered } from "./event-registry";
 import { claimProcessing, hasProcessed, markProcessed, releaseProcessing } from "./idempotency";
 import { moveToDeadLetter } from "./dead-letter";
 import { nextAttemptDelayMs, shouldDeadLetter } from "./retry";
-import { recordDispatched, recordHandlerFailure, recordRetried, recordDeadLettered, recordUnknownType, recordHandlerLatency } from "./metrics";
+import {
+  recordDispatched, recordHandlerFailure, recordRetried, recordDeadLettered,
+  recordUnknownType, recordHandlerLatency, recordRetryStormThrottled,
+  recordWorkerSweepStart, recordWorkerSweepEnd,
+} from "./metrics";
+import { getEngineCapacity, RetryStormGate } from "../mega-engine/capacity";
 import type { EventEnvelope } from "./types";
 
 const WORKER_ID = `${process.pid}-${crypto.randomUUID().slice(0, 8)}`;
 const CLAIM_BATCH_SIZE = Math.max(1, Number(process.env.ENGINE_EVENT_BATCH_SIZE ?? 25));
+const retryStormGate = new RetryStormGate(getEngineCapacity().retryStormWindowMs, getEngineCapacity().retryStormLimit);
 
 // How long a row can sit locked in PROCESSING before the stale-lock sweep
 // reclaims it — long enough that a legitimately slow subscriber chain
@@ -174,7 +180,9 @@ async function dispatchRow(row: typeof eventOutboxTable.$inferSelect): Promise<v
   }
 
   recordRetried();
-  const delay = nextAttemptDelayMs(attempts);
+  const retryAllowed = retryStormGate.allow();
+  if (!retryAllowed) recordRetryStormThrottled();
+  const delay = retryAllowed ? nextAttemptDelayMs(attempts) : getEngineCapacity().retryStormWindowMs;
   await db.update(eventOutboxTable).set({
     status: "FAILED", attemptCount: attempts, lastError: combinedError,
     nextAttemptAt: new Date(Date.now() + delay), lockedBy: null, lockedAt: null,
@@ -186,6 +194,7 @@ async function dispatchRow(row: typeof eventOutboxTable.$inferSelect): Promise<v
 export async function runEventBusDispatchSweep(): Promise<{ claimed: number }> {
   if (sweepInFlight) return { claimed: 0 };
   sweepInFlight = true;
+  recordWorkerSweepStart();
   try {
     await recoverStaleLocks();
 
@@ -199,6 +208,7 @@ export async function runEventBusDispatchSweep(): Promise<{ claimed: number }> {
     logBus.system(`📬 Event Bus sweep: dispatched ${batch.length} event(s)`);
     return { claimed: batch.length };
   } finally {
+    recordWorkerSweepEnd();
     sweepInFlight = false;
   }
 }
@@ -279,4 +289,16 @@ export function stopEventBusDispatcher(): void {
   scheduledTask?.destroy?.();
   scheduledTask = undefined;
   logger.info("Event Bus dispatcher stopped");
+}
+
+export function isEventBusDispatchInFlight(): boolean {
+  return sweepInFlight;
+}
+
+export async function waitForEventBusIdle(timeoutMs = 5_000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (sweepInFlight && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  return !sweepInFlight;
 }

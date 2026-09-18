@@ -41,7 +41,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   Activity, RefreshCw, Loader2, HeartPulse, Gauge, MailWarning, Trash2,
-  RotateCcw, Ban, Search, ChevronRight, ChevronDown,
+  RotateCcw, Ban, Search, ChevronRight, ChevronDown, Server, ShieldCheck,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -132,6 +132,38 @@ interface EngineMetrics {
   eventBus: EventBusMetricsSnapshot;
   scheduler: SchedulerMetricsSnapshot;
   workflow: WorkflowMetricsSnapshot;
+}
+
+interface EngineOperations {
+  checkedAt: string;
+  worker: {
+    eventDispatcher: { active: boolean; lastHeartbeatAt: string | null };
+    scheduler: { active: boolean; lastHeartbeatAt: string | null };
+  };
+  queues: {
+    eventOutbox: number;
+    scheduler: number;
+    eventDeadLetter: number;
+    schedulerDeadLetter: number;
+    workflowWaiting: number;
+  };
+  latency: { eventProcessingMs: number | null; schedulerLagMs: number | null; workflowMs: number | null };
+  retryCounts: { event: number; scheduler: number; workflow: number };
+  failureRate: { event: number; scheduler: number; workflow: number };
+  capacity: {
+    eventBatchSize: number;
+    schedulerBatchSize: number;
+    eventMaxInFlight: number;
+    schedulerMaxInFlight: number;
+    retryStormWindowMs: number;
+    retryStormLimit: number;
+  };
+}
+
+interface ReadinessAudit {
+  ready: boolean;
+  checkedAt: string;
+  checks: { name: string; status: "PASS" | "FAIL" | "WARN"; detail: string }[];
 }
 
 type DeadLetterStatus = "PENDING" | "REPLAYED" | "DISCARDED";
@@ -312,6 +344,31 @@ export default function AdminMegaEngineObservabilityPage() {
   }, [toast]);
   useEffect(() => { loadMetrics(); }, [loadMetrics]);
 
+  // J10/J15 — live operator snapshot and final readiness gate.
+  const [operations, setOperations] = useState<EngineOperations | null>(null);
+  const [readiness, setReadiness] = useState<ReadinessAudit | null>(null);
+  const [operationsLoading, setOperationsLoading] = useState(true);
+  const loadOperations = useCallback(async () => {
+    setOperationsLoading(true);
+    try {
+      const [live, audit] = await Promise.all([
+        customFetch<EngineOperations>("/api/admin/mega-engine/operations"),
+        customFetch<ReadinessAudit>("/api/admin/mega-engine/readiness").catch(() => null),
+      ]);
+      setOperations(live);
+      if (audit) setReadiness(audit);
+    } catch {
+      toast({ title: "Failed to load live operations", variant: "destructive" });
+    } finally {
+      setOperationsLoading(false);
+    }
+  }, [toast]);
+  useEffect(() => {
+    loadOperations();
+    const timer = setInterval(loadOperations, 5000);
+    return () => clearInterval(timer);
+  }, [loadOperations]);
+
   // ── Dead letters ────────────────────────────────────────────────────────
   const [dlEngine, setDlEngine] = useState<DeadLetterEngine>("events");
   const [dlStatus, setDlStatus] = useState<string>("PENDING");
@@ -416,6 +473,7 @@ export default function AdminMegaEngineObservabilityPage() {
         <TabsList>
           <TabsTrigger value="health" className="gap-1.5"><HeartPulse className="w-3.5 h-3.5" /> Health</TabsTrigger>
           <TabsTrigger value="metrics" className="gap-1.5"><Gauge className="w-3.5 h-3.5" /> Metrics</TabsTrigger>
+          <TabsTrigger value="operations" className="gap-1.5"><Server className="w-3.5 h-3.5" /> Operations</TabsTrigger>
           <TabsTrigger value="dead-letters" className="gap-1.5"><MailWarning className="w-3.5 h-3.5" /> Dead Letters</TabsTrigger>
           <TabsTrigger value="retention" className="gap-1.5"><Trash2 className="w-3.5 h-3.5" /> Retention</TabsTrigger>
         </TabsList>
@@ -523,6 +581,72 @@ export default function AdminMegaEngineObservabilityPage() {
                 </CardContent>
               </Card>
             </div>
+          ) : null}
+        </TabsContent>
+
+        {/* ── Operations / readiness ── */}
+        <TabsContent value="operations" className="space-y-4 mt-4">
+          <div className="flex items-center justify-between">
+            <div className="text-xs text-muted-foreground">
+              {operations ? `Updated ${fmtDate(operations.checkedAt)}` : operationsLoading ? "Loading…" : "—"}
+            </div>
+            <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={loadOperations} disabled={operationsLoading}>
+              {operationsLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />} Refresh
+            </Button>
+          </div>
+          {operations ? (
+            <>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                {([
+                  ["Event outbox", operations.queues.eventOutbox],
+                  ["Scheduler queue", operations.queues.scheduler],
+                  ["Waiting workflows", operations.queues.workflowWaiting],
+                  ["Event DLQ", operations.queues.eventDeadLetter],
+                  ["Job DLQ", operations.queues.schedulerDeadLetter],
+                ] as [string, number][]).map(([label, value]) => (
+                  <Card key={label} className="bg-card border-border/60">
+                    <CardContent className="pt-4"><MetricStat label={label} value={value} /></CardContent>
+                  </Card>
+                ))}
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Card className="bg-card border-border/60">
+                  <CardHeader className="pb-2"><CardTitle className="text-sm">Workers and latency</CardTitle></CardHeader>
+                  <CardContent className="space-y-2 text-xs">
+                    <div className="flex justify-between"><span>Event dispatcher</span><StatusBadge status={operations.worker.eventDispatcher.active ? "ACTIVE" : "IDLE"} map={{ ACTIVE: "success", IDLE: "secondary" }} /></div>
+                    <div className="flex justify-between"><span>Scheduler worker</span><StatusBadge status={operations.worker.scheduler.active ? "ACTIVE" : "IDLE"} map={{ ACTIVE: "success", IDLE: "secondary" }} /></div>
+                    <div className="flex justify-between"><span>Event processing</span><span className="font-mono">{operations.latency.eventProcessingMs == null ? "—" : `${operations.latency.eventProcessingMs.toFixed(1)} ms`}</span></div>
+                    <div className="flex justify-between"><span>Scheduler lag</span><span className="font-mono">{operations.latency.schedulerLagMs == null ? "—" : `${operations.latency.schedulerLagMs.toFixed(1)} ms`}</span></div>
+                    <div className="flex justify-between"><span>Workflow latency</span><span className="font-mono">{operations.latency.workflowMs == null ? "—" : `${operations.latency.workflowMs.toFixed(1)} ms`}</span></div>
+                  </CardContent>
+                </Card>
+                <Card className="bg-card border-border/60">
+                  <CardHeader className="pb-2"><CardTitle className="text-sm">Capacity and failure rate</CardTitle></CardHeader>
+                  <CardContent className="space-y-2 text-xs">
+                    <div className="flex justify-between"><span>Event / scheduler batch</span><span className="font-mono">{operations.capacity.eventBatchSize} / {operations.capacity.schedulerBatchSize}</span></div>
+                    <div className="flex justify-between"><span>Retries (event / job / workflow)</span><span className="font-mono">{operations.retryCounts.event} / {operations.retryCounts.scheduler} / {operations.retryCounts.workflow}</span></div>
+                    <div className="flex justify-between"><span>Failure rate</span><span className="font-mono">{(operations.failureRate.event * 100).toFixed(1)}% / {(operations.failureRate.scheduler * 100).toFixed(1)}% / {(operations.failureRate.workflow * 100).toFixed(1)}%</span></div>
+                    <div className="flex justify-between"><span>Retry storm limit</span><span className="font-mono">{operations.capacity.retryStormLimit} / {operations.capacity.retryStormWindowMs}ms</span></div>
+                  </CardContent>
+                </Card>
+              </div>
+              {readiness && (
+                <Card className="bg-card border-border/60">
+                  <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><ShieldCheck className="w-4 h-4" /> Production readiness audit <StatusBadge status={readiness.ready ? "READY" : "BLOCKED"} map={{ READY: "success", BLOCKED: "destructive" }} /></CardTitle></CardHeader>
+                  <CardContent className="space-y-1.5">
+                    {readiness.checks.map(check => (
+                      <div key={check.name} className="flex items-start gap-2 text-xs">
+                        <StatusBadge status={check.status} map={{ PASS: "success", WARN: "warning", FAIL: "destructive" }} />
+                        <span className="font-mono w-28">{check.name}</span>
+                        <span className="text-muted-foreground">{check.detail}</span>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
+            </>
+          ) : operationsLoading ? (
+            <div className="flex items-center justify-center py-16"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
           ) : null}
         </TabsContent>
 

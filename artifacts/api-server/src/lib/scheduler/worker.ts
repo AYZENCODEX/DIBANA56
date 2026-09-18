@@ -49,7 +49,9 @@ import {
   recordJobExecuted, recordJobFailed, recordJobRetried, recordJobDeadLettered,
   recordWorkerSweepStart, recordWorkerSweepEnd, recordWorkerFailure,
   recordSchedulerLag, recordJobExecutionDuration,
+  recordRetryStormThrottled,
 } from "./metrics";
+import { getEngineCapacity, RetryStormGate } from "../mega-engine/capacity";
 import type { ScheduledJob, MisfirePolicy } from "./types";
 
 // §35 — Scheduler <-> Event Bus integration: every job's outcome is also
@@ -86,6 +88,7 @@ registerEvent({
 
 const WORKER_ID = `${process.pid}-${crypto.randomUUID().slice(0, 8)}`;
 const CLAIM_BATCH_SIZE = Math.max(1, Number(process.env.ENGINE_SCHEDULER_BATCH_SIZE ?? 25));
+const retryStormGate = new RetryStormGate(getEngineCapacity().retryStormWindowMs, getEngineCapacity().retryStormLimit);
 
 // How long a claimed job's lease is valid for before it's considered
 // abandoned (§30: "If a worker dies: lease expires -> job becomes
@@ -238,7 +241,9 @@ async function dispatchJob(row: typeof scheduledJobTable.$inferSelect): Promise<
       return;
     }
 
-    const delay = nextAttemptDelayMs(attemptNumber);
+    const retryAllowed = retryStormGate.allow();
+    if (!retryAllowed) recordRetryStormThrottled();
+    const delay = retryAllowed ? nextAttemptDelayMs(attemptNumber) : getEngineCapacity().retryStormWindowMs;
     await trx.update(scheduledJobTable).set({
       status: "RETRYING", attempts: attemptNumber, lastError: errorMessage,
       runAt: new Date(Date.now() + delay), lockedBy: null, lockedUntil: null, updatedAt: new Date(),
@@ -347,7 +352,9 @@ async function dispatchRecurringJob(job: ScheduledJob, schedule: Schedule): Prom
       return;
     }
 
-    const delay = nextAttemptDelayMs(attemptNumber);
+    const retryAllowed = retryStormGate.allow();
+    if (!retryAllowed) recordRetryStormThrottled();
+    const delay = retryAllowed ? nextAttemptDelayMs(attemptNumber) : getEngineCapacity().retryStormWindowMs;
     await trx.update(scheduledJobTable).set({
       status: "RETRYING", attempts: attemptNumber, lastError: errorMessage,
       runAt: new Date(Date.now() + delay), lockedBy: null, lockedUntil: null, updatedAt: new Date(),
@@ -522,4 +529,16 @@ export function stopSchedulerWorker(): void {
   scheduledTask?.destroy?.();
   scheduledTask = undefined;
   logger.info("Scheduler worker stopped");
+}
+
+export function isSchedulerSweepInFlight(): boolean {
+  return sweepInFlight;
+}
+
+export async function waitForSchedulerIdle(timeoutMs = 5_000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (sweepInFlight && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  return !sweepInFlight;
 }
