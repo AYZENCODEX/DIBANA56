@@ -28,7 +28,8 @@ import { cancelJobsForCorrelation } from "../scheduler";
 import { WORKFLOW_RESUME_JOB_TYPE } from "./scheduler-integration";
 import type { StartWorkflowRunParams, WorkflowContext, WorkflowRun, WorkflowRunStatus, WorkflowStepRun, WorkflowStepRunStatus } from "./types";
 import type { CompensationState } from "./engine-types";
-import { ensureTraceId } from "../trace-context";
+import { ensureTraceId, getCurrentTraceContext } from "../trace-context";
+import { logger } from "../logger";
 
 type DbTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -193,6 +194,9 @@ export async function startRun(params: StartWorkflowRunParams, tx?: DbTx): Promi
   const id = crypto.randomUUID();
   const executor = tx ?? db;
   const firstStep = def.steps[0];
+  const requestContext = getCurrentTraceContext();
+  const correlationId = params.correlationId ?? requestContext?.correlationId;
+  const causationId = params.causationId ?? requestContext?.causationId;
 
   try {
     await executor.insert(workflowRunTable).values({
@@ -202,9 +206,9 @@ export async function startRun(params: StartWorkflowRunParams, tx?: DbTx): Promi
       status: "PENDING",
       currentStepId: firstStep.id,
       context: (params.context ?? {}) as Record<string, unknown>,
-      traceId: ensureTraceId(params.traceId, params.correlationId),
-      correlationId: params.correlationId,
-      causationId: params.causationId,
+      traceId: ensureTraceId(params.traceId, correlationId),
+      correlationId,
+      causationId,
       maxRuntimeMs: def.maxRuntimeMs,
     });
   } catch (err: any) {
@@ -278,9 +282,9 @@ export async function startRun(params: StartWorkflowRunParams, tx?: DbTx): Promi
     {
       type: "workflow.started",
       payload: { runId: id, definitionId: def.id, definitionVersion: def.version },
-      correlationId: params.correlationId,
-      causationId: params.causationId,
-      traceId: ensureTraceId(params.traceId, params.correlationId),
+      correlationId,
+      causationId,
+      traceId: ensureTraceId(params.traceId, correlationId),
     },
     tx,
   );
@@ -525,6 +529,30 @@ export async function cancelRun(id: string, opts?: { reason?: string; actorUserI
     .returning({ id: workflowRunTable.id });
   if (updated.length > 0) {
     await cancelJobsForCorrelation(WORKFLOW_RESUME_JOB_TYPE, id);
+    const cancelled = await getRun(id);
+    if (cancelled) {
+      recordRunTransition("CANCELLED");
+      try {
+        await publishEvent({
+          type: "workflow.cancelled",
+          payload: {
+            runId: cancelled.id,
+            definitionId: cancelled.definitionId,
+            definitionVersion: cancelled.definitionVersion,
+            lastError: cancelled.lastError,
+          },
+          traceId: cancelled.traceId,
+          correlationId: cancelled.correlationId,
+          causationId: cancelled.id,
+          actor: opts?.actorUserId ? { userId: opts.actorUserId, organizationId: cancelled.context.organizationId } : undefined,
+        });
+      } catch (err) {
+        // Cancellation is already durably committed. Keep the state change
+        // authoritative and surface a repairable outbox failure instead of
+        // turning a successful cancellation into an HTTP error.
+        logger.error({ err, runId: id }, "Workflow cancellation event publication failed");
+      }
+    }
   }
   return updated.length > 0;
 }

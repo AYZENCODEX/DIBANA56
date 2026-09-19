@@ -11,6 +11,7 @@ import { createResourceOwnershipRule } from "../lib/policy/resource";
 import { decryptRow } from "../lib/vault-crypto";
 import { createNotification } from "./notifications";
 import { VAULT_ENTITY_ENCRYPTED_FIELDS } from "./vault";
+import { publishAyzenDomainEvent } from "../lib/mega-engine/domain-events";
 
 const router = Router();
 
@@ -318,6 +319,18 @@ router.post("/vault-shares", requireAuth, async (req, res): Promise<void> => {
     `));
 
     const share = result.rows[0] as any;
+    void publishAyzenDomainEvent({
+      type: "vault.share.created",
+      actorUserId: userId,
+      aggregate: { type: "vault_share", id: String(share.id) },
+      payload: {
+        shareId: Number(share.id),
+        entityType: String(entityType),
+        entityId: id,
+        sharedWithUserId: Number(target.id),
+        permission: String(permission),
+      },
+    }).catch(() => {});
 
     createNotification(
       Number(target.id),
@@ -718,6 +731,12 @@ router.patch("/vault-shares/:id", requireAuth, requireVaultShareOwnership("vault
     const share = result.rows[0] as any;
 
     if (typeof isActive === "boolean" && !isActive) {
+      void publishAyzenDomainEvent({
+        type: "vault.share.revoked",
+        actorUserId: userId,
+        aggregate: { type: "vault_share", id: String(share.id) },
+        payload: { shareId: Number(share.id) },
+      }).catch(() => {});
       createNotification(
         Number(share.shared_with_user_id),
         "vault_share",
@@ -751,6 +770,12 @@ router.delete("/vault-shares/:id", requireAuth, requireVaultShareOwnership("vaul
       `DELETE FROM vault_shares WHERE id = ${id} AND owner_id = ${userId} RETURNING id`
     ));
     if (!result.rows.length) { res.status(404).json({ error: "Not found or not yours to manage" }); return; }
+    void publishAyzenDomainEvent({
+      type: "vault.share.revoked",
+      actorUserId: userId,
+      aggregate: { type: "vault_share", id: String(id) },
+      payload: { shareId: Number(id) },
+    }).catch(() => {});
     res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: "DB error", detail: err?.message });

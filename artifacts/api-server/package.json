@@ -7,7 +7,8 @@
     "dev": "export NODE_ENV=development && export PORT=8080 && pnpm run build && pnpm run start",
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:mega-engine": "node --test --import tsx src/lib/mega-engine/*.test.ts"
   },
   "dependencies": {
     "@polymarket/clob-client": "^4.16.0",

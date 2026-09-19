@@ -17,10 +17,15 @@ import crypto from "crypto";
 import { db, scheduledJobTable } from "@workspace/db";
 import { and, desc, eq, inArray, notInArray } from "drizzle-orm";
 import { warnIfUnregistered, defaultMaxAttemptsFor } from "./job-registry";
-import { recordJobScheduled } from "./metrics";
+import { recordJobScheduled, recordJobDeduplicated } from "./metrics";
 import { parseCron, nextCronOccurrence } from "./cron-parser";
 import type { ScheduleJobParams, ScheduleCronParams, ScheduleRecurringParams, ScheduledJob } from "./types";
-import { ensureTraceId, stableSerialize } from "../trace-context";
+import { ensureTraceId, stableSerialize, getCurrentTraceContext } from "../trace-context";
+import { publishEvent, registerEvent } from "../event-bus";
+
+registerEvent({ type: "job.created", version: 1, owner: "scheduler" });
+registerEvent({ type: "job.cancelled", version: 1, owner: "scheduler" });
+registerEvent({ type: "job.failed", version: 1, owner: "scheduler" });
 
 // Same shape as db.transaction(async (tx) => ...)'s callback param — see
 // event-bus/publisher.ts's identical DbTx alias for why.
@@ -47,7 +52,10 @@ export async function scheduleJob<T = unknown>(params: ScheduleJobParams<T>, tx?
   const id = crypto.randomUUID();
   const idempotencyKey = params.idempotencyKey
     ?? `job:${params.jobType}:${params.causationId ?? ""}:${params.runAt.toISOString()}:${stableSerialize(params.payload)}`;
-  const traceId = ensureTraceId(params.traceId, params.correlationId);
+  const requestContext = getCurrentTraceContext();
+  const correlationId = params.correlationId ?? requestContext?.correlationId;
+  const causationId = params.causationId ?? requestContext?.causationId;
+  const traceId = ensureTraceId(params.traceId, correlationId);
   const executor = tx ?? db;
 
   // Part H3 (migration 115) — deliberately NOT wrapped in a try/catch
@@ -82,15 +90,25 @@ export async function scheduleJob<T = unknown>(params: ScheduleJobParams<T>, tx?
       misfirePolicy: params.misfirePolicy,
       idempotencyKey,
       traceId,
-      correlationId: params.correlationId,
-      causationId: params.causationId,
+      correlationId,
+      causationId,
       maxAttempts: params.maxAttempts ?? defaultMaxAttemptsFor(params.jobType),
     });
+    await publishEvent({
+      type: "job.created",
+      payload: { jobId: id, jobType: params.jobType },
+      traceId,
+      correlationId,
+      causationId,
+    }, tx);
   } catch (err: any) {
     if (err?.code === "23505" || /duplicate key/i.test(String(err?.message ?? ""))) {
       const [existing] = await db.select({ id: scheduledJobTable.id }).from(scheduledJobTable)
         .where(eq(scheduledJobTable.idempotencyKey, idempotencyKey)).limit(1);
-      if (existing) return { id: existing.id };
+      if (existing) {
+        recordJobDeduplicated();
+        return { id: existing.id };
+      }
     }
     throw err;
   }
@@ -250,6 +268,9 @@ export async function cancelJob(id: string): Promise<boolean> {
     .set({ status: "CANCELLED", updatedAt: new Date() })
     .where(and(eq(scheduledJobTable.id, id), inArray(scheduledJobTable.status, cancellable)))
     .returning({ id: scheduledJobTable.id });
+  if (updated.length > 0) {
+    await publishEvent({ type: "job.cancelled", payload: { jobId: id }, correlationId: id, causationId: id });
+  }
   return updated.length > 0;
 }
 
@@ -285,6 +306,9 @@ export async function cancelJobsForCorrelation(jobType: string, correlationId: s
       inArray(scheduledJobTable.status, cancellable),
     ))
     .returning({ id: scheduledJobTable.id });
+  for (const row of updated) {
+    await publishEvent({ type: "job.cancelled", payload: { jobId: row.id }, correlationId, causationId: row.id });
+  }
   return updated.length;
 }
 

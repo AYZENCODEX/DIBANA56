@@ -16,7 +16,7 @@
  * imports engine.ts back (see that file's own header for why the
  * registration is split out).
  */
-import { scheduleJob } from "../scheduler";
+import { getJobsForCorrelation, scheduleJob } from "../scheduler";
 
 export const WORKFLOW_RESUME_JOB_TYPE = "workflow.resume";
 
@@ -27,6 +27,10 @@ export interface WorkflowResumeJobPayload {
 
 /** §29 "Workflow wakeup" — `workflowRunId + resumeAt`, exactly this call's two real arguments. `correlationId: runId` lets this job's own scheduler.job.* lifecycle events (worker.ts's §35 wiring) be traced back to the run they belong to without inspecting payload. */
 export async function scheduleWorkflowResume(runId: string, resumeAt: Date): Promise<{ id: string }> {
+  const activeJobs = (await getJobsForCorrelation(WORKFLOW_RESUME_JOB_TYPE, runId))
+    .filter((job) => ["SCHEDULED", "RETRYING", "RUNNING"].includes(job.status));
+  if (activeJobs.length > 0) return { id: activeJobs[0].id };
+
   return scheduleJob<WorkflowResumeJobPayload>({
     jobType: WORKFLOW_RESUME_JOB_TYPE,
     runAt: resumeAt,

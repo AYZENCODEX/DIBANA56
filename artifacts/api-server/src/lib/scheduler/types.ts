@@ -132,6 +132,7 @@ export interface SchedulerMetricsSnapshot {
   jobsFailed: number;
   jobsRetried: number;
   jobsDeadLettered: number;
+  jobsDeduplicated: number;
   workerFailures: number;
   retryStormThrottled: number;
   workerActive: boolean;

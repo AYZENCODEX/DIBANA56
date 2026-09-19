@@ -14,6 +14,10 @@ export interface EngineCapacity {
   retryStormLimit: number;
 }
 
+export function ratio(failures: number, total: number): number {
+  return total > 0 ? Number((failures / total).toFixed(4)) : 0;
+}
+
 function positiveInt(name: string, fallback: number): number {
   const raw = process.env[name];
   if (raw === undefined) return fallback;

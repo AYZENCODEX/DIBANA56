@@ -78,6 +78,7 @@ import { clearSessionCookie } from "../lib/session-cookie";
 // for why this call below is fire-and-forget.
 import { dispatchBackchannelLogoutForUser } from "../lib/oidc-logout-propagation";
 import { logger } from "../lib/logger";
+import { publishAyzenDomainEvent } from "../lib/mega-engine/domain-events";
 
 const router: IRouter = Router();
 
@@ -136,11 +137,23 @@ export async function logoutHandler(req: Request, res: Response): Promise<void> 
       // correct choice: Sylo's own receiving endpoint finds nothing left
       // to revoke and is a harmless no-op in that case.
       if (decoded.userId) void dispatchBackchannelLogoutForUser(decoded.userId);
+      void publishAyzenDomainEvent({
+        type: "oidc.session.revoked",
+        actorUserId: decoded.userId,
+        aggregate: { type: "oidc_session", id: decoded.sid },
+        payload: { sessionId: decoded.sid },
+      }).catch(() => {});
     }
   }
 
   // oidc.logout — section 5's observability event list.
   logger.info({ clientId: result.client?.clientId ?? null }, "oidc.logout");
+  void publishAyzenDomainEvent({
+    type: "oidc.logout",
+    actorUserId: undefined,
+    aggregate: { type: "oidc_client", id: result.client?.clientId ?? "unknown" },
+    payload: { clientId: result.client?.clientId ?? null },
+  }).catch(() => {});
 
   // 6b-d — Logout Completion.
   if (result.postLogoutRedirectUri) {

@@ -172,7 +172,7 @@ router.post("/admin/mega-engine/dead-letters/:engine/:id/replay", requireDev, as
   try {
     const result = engine === "events" ? await replayEventDeadLetter(id) : await replayJobDeadLetter(id);
     await writeEngineAudit({
-      action: "dead_letter.replayed.admin",
+      action: "dead_letter.replayed",
       metadata: { engine, deadLetterId: id, actorUserId: req.user?.userId, result },
     });
     logger.info({ engine, id, actorId: req.user?.userId, result }, "mega_engine.dead_letter.admin_replayed");
@@ -274,7 +274,7 @@ router.post("/admin/mega-engine/workflow/runs/:id/cancel", requireDev, async (re
   if (cancelled) {
     await writeEngineAudit({
       action: "workflow.cancelled.admin",
-      metadata: { runId: req.params.id, reason: reason ?? "Cancelled by operator" },
+      metadata: { runId: req.params.id, reason: reason ?? "Cancelled by operator", actorUserId: req.user?.userId },
     });
   }
   logger.info({ runId: req.params.id, cancelled, actorId: req.user?.userId }, "mega_engine.workflow_run.admin_cancelled");
@@ -299,6 +299,10 @@ router.post("/admin/mega-engine/jobs/:id/resume", requireDev, async (req, res): 
 router.post("/admin/mega-engine/workflow/runs/:id/replay", requireDev, async (req, res): Promise<void> => {
   try {
     const result = await replayRun(req.params.id);
+    await writeEngineAudit({
+      action: "workflow.replayed.admin",
+      metadata: { runId: req.params.id, actorUserId: req.user?.userId, result },
+    });
     logger.info({ runId: req.params.id, actorId: req.user?.userId, result }, "mega_engine.workflow_run.admin_replayed");
     res.json({ runId: req.params.id, ...result });
   } catch (err) {

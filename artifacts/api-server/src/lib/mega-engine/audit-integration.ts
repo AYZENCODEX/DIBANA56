@@ -6,6 +6,9 @@ import { logger } from "../logger";
 const AUDITED_EVENTS = [
   "workflow.started", "workflow.completed", "workflow.failed", "workflow.cancelled", "workflow.timed_out",
   "scheduler.job.completed", "scheduler.job.failed", "scheduler.job.deadlettered",
+  "job.created", "job.cancelled", "job.failed",
+  "organization.member.changed", "vault.share.changed", "oidc.session.changed",
+  "policy.decision.denied", "dead_letter.replayed",
 ];
 
 export function registerMegaEngineAuditIntegration(): void {

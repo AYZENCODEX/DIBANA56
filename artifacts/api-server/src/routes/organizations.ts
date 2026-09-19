@@ -6,6 +6,7 @@ import { decryptRow } from "../lib/vault-crypto";
 import { notifyOrganizationInvited, notifyOrganizationRoleChanged } from "../lib/notification-bus";
 import { broadcastToUser } from "./events";
 import { ENTITY_TABLES, isValidType, VALID_TYPES } from "./vault-shares";
+import { publishAyzenDomainEvent } from "../lib/mega-engine/domain-events";
 
 const router = Router();
 
@@ -155,6 +156,13 @@ router.post("/organizations/:id/invite", requireAuth, async (req, res): Promise<
     const orgName = (orgNameRes.rows[0] as any)?.name ?? `Organization #${orgId}`;
     broadcastToUser(inviteeId, "organization_invite", { organizationId: orgId });
     notifyOrganizationInvited(inviteeId, orgId, orgName).catch(() => {});
+     void publishAyzenDomainEvent({
+       type: "organization.member.invited",
+       actorUserId: userId,
+       organizationId: orgId,
+       aggregate: { type: "organization_member", id: `${orgId}:${inviteeId}` },
+       payload: { organizationId: orgId, memberUserId: inviteeId },
+     }).catch(() => {});
     res.json({ ok: true });
   } catch {
     res.status(409).json({ error: "User already invited or a member" });
@@ -170,6 +178,13 @@ router.patch("/organizations/:id/invites/respond", requireAuth, async (req, res)
   if (!membership || membership.status !== "pending") { res.status(404).json({ error: "No pending invite for this organization" }); return; }
   if (accept) {
     await db.execute(sql`UPDATE organization_members SET status = 'active', updated_at = now() WHERE organization_id = ${orgId} AND user_id = ${userId}`);
+    void publishAyzenDomainEvent({
+      type: "organization.member.joined",
+      actorUserId: userId,
+      organizationId: orgId,
+      aggregate: { type: "organization_member", id: `${orgId}:${userId}` },
+      payload: { organizationId: orgId, memberUserId: userId },
+    }).catch(() => {});
   } else {
     await db.execute(sql`DELETE FROM organization_members WHERE organization_id = ${orgId} AND user_id = ${userId}`);
   }
@@ -188,6 +203,13 @@ router.delete("/organizations/:id/members/:memberId", requireAuth, async (req, r
   const targetRole = (targetRes.rows[0] as any)?.role;
   if (targetRole === "owner") { res.status(400).json({ error: "Cannot remove the org owner — transfer ownership first" }); return; }
   await db.execute(sql`DELETE FROM organization_members WHERE organization_id = ${orgId} AND user_id = ${memberId}`);
+  void publishAyzenDomainEvent({
+    type: "organization.member.removed",
+    actorUserId: userId,
+    organizationId: orgId,
+    aggregate: { type: "organization_member", id: `${orgId}:${memberId}` },
+    payload: { organizationId: orgId, memberUserId: memberId },
+  }).catch(() => {});
   res.json({ ok: true });
 });
 
@@ -206,6 +228,13 @@ router.patch("/organizations/:id/members/:memberId/role", requireAuth, async (re
   const orgNameRes = await db.execute(sql`SELECT name FROM organizations WHERE id = ${orgId}`);
   const orgName = (orgNameRes.rows[0] as any)?.name ?? `Organization #${orgId}`;
   notifyOrganizationRoleChanged(memberId, orgId, orgName, role).catch(() => {});
+  void publishAyzenDomainEvent({
+    type: "organization.member.role_changed",
+    actorUserId: userId,
+    organizationId: orgId,
+    aggregate: { type: "organization_member", id: `${orgId}:${memberId}` },
+    payload: { organizationId: orgId, memberUserId: memberId, role: String(role) },
+  }).catch(() => {});
   res.json({ ok: true });
 });
 
@@ -222,6 +251,13 @@ router.post("/organizations/:id/transfer-ownership", requireAuth, async (req, re
   await db.execute(sql`UPDATE organizations SET owner_id = ${targetId}, updated_at = now() WHERE id = ${orgId}`);
   await db.execute(sql`UPDATE organization_members SET role = 'admin', updated_at = now() WHERE organization_id = ${orgId} AND user_id = ${userId}`);
   await db.execute(sql`UPDATE organization_members SET role = 'owner', updated_at = now() WHERE organization_id = ${orgId} AND user_id = ${targetId}`);
+  void publishAyzenDomainEvent({
+    type: "organization.ownership.transferred",
+    actorUserId: userId,
+    organizationId: orgId,
+    aggregate: { type: "organization", id: String(orgId) },
+    payload: { organizationId: orgId, fromUserId: userId, toUserId: targetId },
+  }).catch(() => {});
   res.json({ ok: true });
 });
 

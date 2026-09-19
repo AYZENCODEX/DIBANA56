@@ -124,6 +124,7 @@ export async function registerWorkflowEventTriggers(env: WorkflowRuntimeEnv = {}
               input: (envelope.payload && typeof envelope.payload === "object" ? envelope.payload : { value: envelope.payload }) as Record<string, unknown>,
             },
             correlationId: envelope.correlationId,
+            traceId: envelope.traceId,
             // §26/§39 — this run's own causationId points back at the
             // event that started it, the same traceability §39 asks
             // every workflow/job/event to carry.

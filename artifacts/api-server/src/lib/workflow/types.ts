@@ -186,6 +186,7 @@ export interface WorkflowMetricsSnapshot {
   runsCompleted: number;
   runsFailed: number;
   runsTimedOut: number;
+  runsCancelled: number;
   /** §39 Latency metrics, Part G1 — total wall-clock duration of a run,
    *  `startedAt` to the moment it reaches ANY terminal status (not just
    *  COMPLETED — a FAILED/CANCELLED/etc. run still took real time and is

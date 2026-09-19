@@ -3,7 +3,7 @@ import { sql } from "drizzle-orm";
 import { getEventBusMetrics } from "../event-bus";
 import { getSchedulerMetrics } from "../scheduler";
 import { getWorkflowMetrics } from "../workflow";
-import { getEngineCapacity } from "./capacity";
+import { getEngineCapacity, ratio } from "./capacity";
 
 export interface EngineOperationsSnapshot {
   checkedAt: string;
@@ -34,10 +34,6 @@ export interface EngineOperationsSnapshot {
     workflow: number;
   };
   capacity: ReturnType<typeof getEngineCapacity>;
-}
-
-export function ratio(failures: number, total: number): number {
-  return total > 0 ? Number((failures / total).toFixed(4)) : 0;
 }
 
 function avg(snapshot: { avgMs: number | null }): number | null {

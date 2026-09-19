@@ -28,7 +28,7 @@ import { logger } from "../logger";
 import { validateEventPayload, getEventDefinition } from "./event-registry";
 import { recordPublished, recordPublishLatency } from "./metrics";
 import type { EventEnvelope, PublishEventParams } from "./types";
-import { ensureTraceId } from "../trace-context";
+import { ensureTraceId, getCurrentTraceContext } from "../trace-context";
 
 // Same shape as db.transaction(async (tx) => ...)'s callback param —
 // inferred straight off `db`, matching mail-send-queue.ts's DbTx alias so
@@ -53,15 +53,18 @@ export async function publishEvent<T = unknown>(
   const validatedPayload = validateEventPayload<T>(params.type, params.payload);
   const def = getEventDefinition(params.type);
 
+  const requestContext = getCurrentTraceContext();
+  const correlationId = params.correlationId ?? requestContext?.correlationId;
+  const causationId = params.causationId ?? requestContext?.causationId;
   const envelope: EventEnvelope<T> = {
     id: crypto.randomUUID(),
     type: params.type,
     version: params.version ?? def?.version ?? 1,
     occurredAt: new Date().toISOString(),
     actor: params.actor,
-    traceId: ensureTraceId(params.traceId, params.correlationId),
-    correlationId: params.correlationId,
-    causationId: params.causationId,
+    traceId: ensureTraceId(params.traceId, correlationId),
+    correlationId,
+    causationId,
     aggregate: params.aggregate,
     payload: validatedPayload,
     metadata: params.metadata,

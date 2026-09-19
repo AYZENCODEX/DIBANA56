@@ -98,9 +98,11 @@ const DEFAULT_EVENT_TYPES: Array<{ type: string; owner: string }> = [
   { type: "organization.member.invited", owner: "organizations" },
   { type: "organization.member.joined", owner: "organizations" },
   { type: "organization.member.removed", owner: "organizations" },
+  { type: "organization.member.changed", owner: "organizations" },
 
   { type: "vault.share.created", owner: "vault" },
   { type: "vault.share.revoked", owner: "vault" },
+  { type: "vault.share.changed", owner: "vault" },
 
   { type: "credit.balance.changed", owner: "credits" },
   { type: "credit.consumption.created", owner: "credits" },
@@ -114,10 +116,15 @@ const DEFAULT_EVENT_TYPES: Array<{ type: string; owner: string }> = [
   { type: "oidc.login.succeeded", owner: "oidc" },
   { type: "oidc.login.failed", owner: "oidc" },
   { type: "oidc.session.revoked", owner: "oidc" },
+  { type: "oidc.session.changed", owner: "oidc" },
   { type: "oidc.logout.completed", owner: "oidc" },
 
   { type: "policy.decision.allowed", owner: "policy" },
   { type: "policy.decision.denied", owner: "policy" },
+  { type: "job.created", owner: "scheduler" },
+  { type: "job.cancelled", owner: "scheduler" },
+  { type: "job.failed", owner: "scheduler" },
+  { type: "dead_letter.replayed", owner: "mega-engine" },
 
   { type: "project.created", owner: "projects" },
   { type: "project.deleted", owner: "projects" },

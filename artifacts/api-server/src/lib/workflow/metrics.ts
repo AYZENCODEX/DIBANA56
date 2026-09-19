@@ -31,6 +31,7 @@ const counters = {
   runsCompleted: 0,
   runsFailed: 0,
   runsTimedOut: 0,
+  runsCancelled: 0,
 };
 
 // Part G1 — §39 Latency metrics (`workflow_duration`/`step_duration`).
@@ -70,6 +71,9 @@ export function recordRunTransition(to: WorkflowRunStatus): void {
       break;
     case "TIMED_OUT":
       counters.runsTimedOut++;
+      break;
+    case "CANCELLED":
+      counters.runsCancelled++;
       break;
     default:
       break;

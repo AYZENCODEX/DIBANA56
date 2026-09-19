@@ -49,6 +49,7 @@ import {
 import { apiKeyScopeGate } from "./middlewares/api-key-scope";
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
+import { runWithTraceContext, traceContextFromHeaders } from "./lib/trace-context";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -71,6 +72,16 @@ app.use(
     },
   }),
 );
+
+// J3 — establish one trace context for every request. AsyncLocalStorage
+// carries it through route/service/event/scheduler calls without requiring
+// every domain method to thread an optional request object.
+app.use((req, res, next) => {
+  const context = traceContextFromHeaders(req.headers);
+  res.setHeader("x-trace-id", context.traceId);
+  if (context.correlationId) res.setHeader("x-correlation-id", context.correlationId);
+  runWithTraceContext(context, next);
+});
 
 app.use((req, res, next) => {
   const start = Date.now();
