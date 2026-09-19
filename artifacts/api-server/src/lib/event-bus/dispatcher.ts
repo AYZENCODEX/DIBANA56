@@ -47,12 +47,14 @@ import {
   recordUnknownType, recordHandlerLatency, recordRetryStormThrottled,
   recordWorkerSweepStart, recordWorkerSweepEnd,
 } from "./metrics";
-import { getEngineCapacity, RetryStormGate } from "../mega-engine/capacity";
+import { getEngineCapacity, RetryStormGate, runWithConcurrency } from "../mega-engine/capacity";
 import type { EventEnvelope } from "./types";
 
 const WORKER_ID = `${process.pid}-${crypto.randomUUID().slice(0, 8)}`;
-const CLAIM_BATCH_SIZE = Math.max(1, Number(process.env.ENGINE_EVENT_BATCH_SIZE ?? 25));
-const retryStormGate = new RetryStormGate(getEngineCapacity().retryStormWindowMs, getEngineCapacity().retryStormLimit);
+const ENGINE_CAPACITY = getEngineCapacity();
+const CLAIM_BATCH_SIZE = ENGINE_CAPACITY.eventBatchSize;
+const MAX_IN_FLIGHT = ENGINE_CAPACITY.eventMaxInFlight;
+const retryStormGate = new RetryStormGate(ENGINE_CAPACITY.retryStormWindowMs, ENGINE_CAPACITY.retryStormLimit);
 
 // How long a row can sit locked in PROCESSING before the stale-lock sweep
 // reclaims it — long enough that a legitimately slow subscriber chain
@@ -201,9 +203,7 @@ export async function runEventBusDispatchSweep(): Promise<{ claimed: number }> {
     const batch = await claimNextBatch(CLAIM_BATCH_SIZE);
     if (!batch.length) return { claimed: 0 };
 
-    for (const row of batch) {
-      await dispatchRow(row);
-    }
+    await runWithConcurrency(batch, MAX_IN_FLIGHT, dispatchRow);
 
     logBus.system(`📬 Event Bus sweep: dispatched ${batch.length} event(s)`);
     return { claimed: batch.length };

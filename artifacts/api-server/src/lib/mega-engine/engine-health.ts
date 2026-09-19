@@ -90,7 +90,7 @@ const QUEUE_OVERDUE_GRACE_MS = 60_000; // same reasoning as OUTBOX_OVERDUE_GRACE
 const QUEUE_DEGRADED_AT = 1;
 const QUEUE_UNHEALTHY_AT = 100;
 const WORKER_STALE_HEARTBEAT_MS = 60_000; // §33 — poll cadence is 5s (worker.ts's default cron), so a heartbeat this old means the loop isn't ticking at all
-const STUCK_RUN_GRACE_MS = 5 * 60_000; // a RUNNING run with no updatedAt movement in 5 minutes, with no timeoutMs enforcement yet (see D2's own "still open" list) — see runner check below for the caveat this implies
+const STUCK_RUN_GRACE_MS = 5 * 60_000; // operational signal for a RUNNING run with no updatedAt movement; timeout enforcement remains authoritative for configured maxRuntimeMs runs
 
 function worst(...states: HealthState[]): HealthState {
   if (states.includes("UNHEALTHY")) return "UNHEALTHY";
@@ -220,14 +220,13 @@ async function checkRunner(): Promise<ComponentHealth> {
   const reasons: string[] = [];
   let state: HealthState = "HEALTHY";
 
-  // §17/D2's own "still open" note: step-level timeoutMs / run-level
-  // maxRuntimeMs aren't enforced by engine.ts yet, so a RUNNING run with
-  // no recent updated_at movement is the only proxy available for "stuck"
-  // — a run legitimately WAITING (§24) is a different, non-stuck status,
-  // so this only counts RUNNING, not WAITING.
+  // A RUNNING run with no recent updated_at movement is still useful as an
+  // operational signal for crashes or handlers that ignore AbortSignal. A
+  // run legitimately WAITING (§24) is a different, non-stuck status, so this
+  // only counts RUNNING, not WAITING.
   if (stuck > 0) {
     state = worst(state, stuck >= 20 ? "UNHEALTHY" : "DEGRADED");
-    reasons.push(`${stuck} run(s) stuck RUNNING with no update in over ${STUCK_RUN_GRACE_MS / 60_000} minute(s) — likely a crashed executeRun() with no timeout enforcement to recover it (see Part D2's "still open" list)`);
+    reasons.push(`${stuck} run(s) stuck RUNNING with no update in over ${STUCK_RUN_GRACE_MS / 60_000} minute(s) — likely a crashed executeRun() or a handler that ignored its timeout signal`);
   }
 
   if (m.runsStarted > 0) {

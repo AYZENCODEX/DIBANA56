@@ -51,7 +51,7 @@ import {
   recordSchedulerLag, recordJobExecutionDuration,
   recordRetryStormThrottled,
 } from "./metrics";
-import { getEngineCapacity, RetryStormGate } from "../mega-engine/capacity";
+import { getEngineCapacity, RetryStormGate, runWithConcurrency } from "../mega-engine/capacity";
 import type { ScheduledJob, MisfirePolicy } from "./types";
 
 // §35 — Scheduler <-> Event Bus integration: every job's outcome is also
@@ -87,8 +87,10 @@ registerEvent({
 });
 
 const WORKER_ID = `${process.pid}-${crypto.randomUUID().slice(0, 8)}`;
-const CLAIM_BATCH_SIZE = Math.max(1, Number(process.env.ENGINE_SCHEDULER_BATCH_SIZE ?? 25));
-const retryStormGate = new RetryStormGate(getEngineCapacity().retryStormWindowMs, getEngineCapacity().retryStormLimit);
+const ENGINE_CAPACITY = getEngineCapacity();
+const CLAIM_BATCH_SIZE = ENGINE_CAPACITY.schedulerBatchSize;
+const MAX_IN_FLIGHT = ENGINE_CAPACITY.schedulerMaxInFlight;
+const retryStormGate = new RetryStormGate(ENGINE_CAPACITY.retryStormWindowMs, ENGINE_CAPACITY.retryStormLimit);
 
 // How long a claimed job's lease is valid for before it's considered
 // abandoned (§30: "If a worker dies: lease expires -> job becomes
@@ -279,7 +281,7 @@ async function dispatchJob(row: typeof scheduledJobTable.$inferSelect): Promise<
  * §31's misfire policy is resolved once per dispatch, against the row's
  * own (possibly overdue) `run_at` as the "due since" reference point —
  * see misfire.ts's resolveMisfire(). Under CATCH_UP, multiple occurrences
- * run sequentially in this same dispatch; if any one of them throws, the
+ * run sequentially inside this same job dispatch; if any one of them throws, the
  * remaining ones in that batch are NOT attempted (the whole dispatch is
  * treated as one failed attempt and retried/backed-off as a unit, same as
  * a single-occurrence failure would be) — simpler and safer than trying
@@ -369,7 +371,7 @@ async function dispatchRecurringJob(job: ScheduledJob, schedule: Schedule): Prom
   }
 }
 
-/** One worker tick: claim a batch, dispatch each row sequentially. Exposed for tests/manual triggering. */
+/** One worker tick: claim a batch, dispatch rows under the configured in-flight ceiling. Exposed for tests/manual triggering. */
 export async function runSchedulerSweep(): Promise<{ claimed: number }> {
   if (sweepInFlight) return { claimed: 0 };
   sweepInFlight = true;
@@ -380,9 +382,7 @@ export async function runSchedulerSweep(): Promise<{ claimed: number }> {
     const batch = await claimNextBatch(CLAIM_BATCH_SIZE);
     if (!batch.length) return { claimed: 0 };
 
-    for (const row of batch) {
-      await dispatchJob(row);
-    }
+    await runWithConcurrency(batch, MAX_IN_FLIGHT, dispatchJob);
 
     logBus.system(`⏱️ Scheduler sweep: dispatched ${batch.length} job(s)`);
     return { claimed: batch.length };

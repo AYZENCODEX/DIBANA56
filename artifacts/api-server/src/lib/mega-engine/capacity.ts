@@ -18,6 +18,29 @@ export function ratio(failures: number, total: number): number {
   return total > 0 ? Number((failures / total).toFixed(4)) : 0;
 }
 
+/**
+ * Runs independent worker items with an explicit process-local concurrency
+ * ceiling. Database leases remain the cross-process correctness boundary;
+ * this helper only prevents one poll tick from overwhelming this process.
+ */
+export async function runWithConcurrency<T>(
+  items: readonly T[],
+  limit: number,
+  task: (item: T) => Promise<void>,
+): Promise<void> {
+  if (items.length === 0) return;
+  const workerCount = Math.min(items.length, Math.max(1, Math.floor(limit)));
+  let nextIndex = 0;
+
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (true) {
+      const index = nextIndex++;
+      if (index >= items.length) return;
+      await task(items[index]);
+    }
+  }));
+}
+
 function positiveInt(name: string, fallback: number): number {
   const raw = process.env[name];
   if (raw === undefined) return fallback;

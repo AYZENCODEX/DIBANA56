@@ -26,9 +26,9 @@
  * `current_step_id` advances every step; `status` only changes at real
  * state-machine boundaries (WAITING, COMPLETED, FAILED, COMPENSATING,
  * ...). advanceCurrentStep() (run-store.ts) is the deliberately separate,
- * unguarded primitive for the former; transitionRun() (state-machine.ts-
- * checked) is still the only way the latter ever changes — this file
- * never bypasses transitionRun() for a status change.
+ * compare-and-set primitive for the former; transitionRun()
+ * (state-machine.ts-checked) is still the only way the latter ever changes —
+ * this file never bypasses transitionRun() for a status change.
  *
  * ── §24/§11: waiting and step-retry backoff share one mechanism ───────────
  * Both are "park the run, let a scheduler job wake it later" — the exact
@@ -233,17 +233,10 @@ async function parkForWait(run: WorkflowRun, resumeAt: Date, currentStepId: stri
 }
 
 /**
- * Part H2 (§65 "H: Production hardening") — run-level `maxRuntimeMs`
- * enforcement (`workflow_run.max_runtime_ms`, copied from
- * `workflow_definition.max_runtime_ms` at `startRun()` time — see
- * run-store.ts). Flagged as missing since Part C
- * (`CHANGES_MEGA_ENGINE_WORKFLOW_PHASE_D2.md`'s own "Still open" list:
- * "Step-level `timeoutMs` / run-level `maxRuntimeMs` enforcement...
- * still missing", carried forward untouched through every phase since).
- * This closes the run-level half only — see this phase's CHANGES doc for
- * why step-level `timeoutMs` (`WorkflowStepDefinition.timeoutMs`, still
- * read nowhere in this file) is deliberately left for a future phase
- * rather than attempted here by the same pass.
+ * J1 — run-level `maxRuntimeMs` enforcement
+ * (`workflow_run.max_runtime_ms`, copied from `workflow_definition.max_runtime_ms`
+ * at `startRun()` time) and deterministic transition to TIMED_OUT. Step-level
+ * `timeoutMs` is enforced by `runStep()` with an AbortSignal.
  *
  * A no-op (`false`) whenever `maxRuntimeMs` isn't set (most runs — it's
  * an optional field on both the definition and the run) or `startedAt`
