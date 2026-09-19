@@ -8,6 +8,12 @@ import { CacheEngine } from "./cache";
 import { AIGatewayEngine } from "./ai-gateway";
 import { PermissionGraphEngine } from "./permission-graph";
 import { RulesEngine } from "./rules";
+import { FileBlobEngine } from "./blob";
+import { DataGovernanceEngine } from "./governance";
+import { EventReplayEngine } from "./event-replay";
+import { DataPipelineEngine } from "./pipeline";
+import { WorkflowDesignerEngine } from "./workflow-designer";
+import { DisasterRecoveryEngine } from "./disaster-recovery";
 
 export * from "./common";
 export * from "./configuration";
@@ -18,6 +24,12 @@ export * from "./cache";
 export * from "./ai-gateway";
 export * from "./permission-graph";
 export * from "./rules";
+export * from "./blob";
+export * from "./governance";
+export * from "./event-replay";
+export * from "./pipeline";
+export * from "./workflow-designer";
+export * from "./disaster-recovery";
 
 export const subEngineAudit = new MemoryAuditSink();
 export const configurationEngine = new ConfigurationEngine(subEngineAudit);
@@ -28,6 +40,12 @@ export const cacheEngine = new CacheEngine(subEngineAudit);
 export const aiGatewayEngine = new AIGatewayEngine(subEngineAudit);
 export const permissionGraphEngine = new PermissionGraphEngine(subEngineAudit);
 export const rulesEngine = new RulesEngine(subEngineAudit);
+export const fileBlobEngine = new FileBlobEngine(subEngineAudit);
+export const dataGovernanceEngine = new DataGovernanceEngine(subEngineAudit);
+export const eventReplayEngine = new EventReplayEngine(subEngineAudit);
+export const dataPipelineEngine = new DataPipelineEngine(subEngineAudit);
+export const workflowDesignerEngine = new WorkflowDesignerEngine(subEngineAudit);
+export const disasterRecoveryEngine = new DisasterRecoveryEngine(subEngineAudit);
 
 configurationEngine.register({ key: "ai.default_model", schema: z.string().min(1), defaultValue: "llama-3.3-70b-versatile", allowedLayers: ["global", "environment", "organization"] });
 configurationEngine.register({ key: "queue.default_max_attempts", schema: z.number().int().min(1).max(20), defaultValue: 3, allowedLayers: ["global", "environment"] });
