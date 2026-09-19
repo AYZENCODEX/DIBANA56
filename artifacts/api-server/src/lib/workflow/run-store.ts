@@ -352,12 +352,20 @@ export async function getPendingStepRun(runId: string, stepId: string): Promise<
  * `null` clears it (Drizzle only omits a column from the UPDATE for a
  * literal `undefined`, never for `null` — engine.ts relies on this to
  * mean "no next step", distinct from "leave whatever was there").
+ * `expectedStatus` is an optional compare-and-set guard; callers that are
+ * advancing an active run should pass `RUNNING` so a stale worker cannot
+ * overwrite a waiting or terminal run. The transaction argument remains the
+ * third parameter for compatibility with existing callers.
  */
-export async function advanceCurrentStep(runId: string, stepId: string | null, tx?: DbTx): Promise<void> {
+export async function advanceCurrentStep(runId: string, stepId: string | null, tx?: DbTx, expectedStatus?: WorkflowRunStatus): Promise<void> {
   const executor = tx ?? db;
-  await executor.update(workflowRunTable)
+  const updated = await executor.update(workflowRunTable)
     .set({ currentStepId: stepId, updatedAt: new Date() })
-    .where(eq(workflowRunTable.id, runId));
+    .where(expectedStatus
+      ? and(eq(workflowRunTable.id, runId), eq(workflowRunTable.status, expectedStatus))
+      : eq(workflowRunTable.id, runId))
+    .returning({ id: workflowRunTable.id });
+  if (!updated.length) throw new Error(`Concurrent workflow update rejected for run "${runId}"`);
 }
 
 /**
@@ -391,9 +399,11 @@ export async function transitionRun(
   assertRunTransition(current.status, to);
 
   const executor = tx ?? db;
-  await executor.update(workflowRunTable)
+  const updated = await executor.update(workflowRunTable)
     .set({ status: to, ...patch, ...(isTerminalRunStatus(to) ? { executionOwner: null, executionLeaseUntil: null } : {}), updatedAt: new Date() })
-    .where(eq(workflowRunTable.id, id));
+    .where(and(eq(workflowRunTable.id, id), eq(workflowRunTable.status, current.status)))
+    .returning({ id: workflowRunTable.id });
+  if (!updated.length) throw new Error(`Concurrent workflow transition rejected for run "${id}"`);
 
   recordRunTransition(to);
 

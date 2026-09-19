@@ -211,7 +211,7 @@ async function advanceOrComplete(run: WorkflowRun, definition: WorkflowDefinitio
     const nextStep = definition.steps.find((s) => s.id === nextStepId);
     await insertStepRetry(run.id, nextStepId, 1, nextStep?.input);
   }
-  await advanceCurrentStep(run.id, nextStepId ?? null);
+  await advanceCurrentStep(run.id, nextStepId ?? null, undefined, "RUNNING");
   await recordCheckpoint(run.id, { currentStepId: nextStepId ?? null }, nextStepId);
 }
 
@@ -226,7 +226,7 @@ async function advanceOrComplete(run: WorkflowRun, definition: WorkflowDefinitio
  * (returns) right after, same as §24's own diagram.
  */
 async function parkForWait(run: WorkflowRun, resumeAt: Date, currentStepId: string | undefined, reason: string | undefined): Promise<void> {
-  await advanceCurrentStep(run.id, currentStepId ?? null);
+  await advanceCurrentStep(run.id, currentStepId ?? null, undefined, "RUNNING");
   await transitionRun(run.id, "WAITING", { nextResumeAt: resumeAt });
   await recordCheckpoint(run.id, { waiting: true, resumeAt: resumeAt.toISOString(), reason: reason ?? null }, currentStepId);
   await scheduleWorkflowResume(run.id, resumeAt);
