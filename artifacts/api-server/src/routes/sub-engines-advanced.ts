@@ -2,8 +2,9 @@ import { Router, type Response } from "express";
 import { requireAdmin, requireAuth } from "../middlewares/auth";
 import {
   dataGovernanceEngine, disasterRecoveryEngine, eventReplayEngine, fileBlobEngine,
-  workflowDesignerEngine, EngineError,
+  workflowDesignerEngine, dataPipelineEngine, EngineError,
 } from "../lib/sub-engines";
+import { scheduleBackupVerification, schedulePipelineRun } from "../lib/sub-engines/integration";
 
 const router = Router();
 const actor = (req: { user?: { userId: number } }): number | null => req.user?.userId ?? null;
@@ -23,6 +24,23 @@ router.get("/sub-engines/blobs", requireAuth, (req, res) => {
 });
 router.delete("/sub-engines/blobs/:id", requireAuth, (req, res) => {
   try { fileBlobEngine.delete(req.params.id, { organizationId: Number(req.body.organizationId), userId: req.user?.userId }, actor(req)); res.status(204).send(); } catch (error) { fail(error, res); }
+});
+
+router.post("/sub-engines/pipelines", requireAdmin, (req, res) => {
+  try {
+    res.status(201).json(dataPipelineEngine.register({ ...req.body, organizationId: req.body.organizationId ?? req.user?.organizationId }, actor(req)));
+  } catch (error) { fail(error, res); }
+});
+router.post("/sub-engines/pipelines/:id/run", requireAuth, async (req, res) => {
+  try {
+    const result = req.body?.async === false
+      ? await dataPipelineEngine.start(req.params.id, req.body.input, actor(req))
+      : await schedulePipelineRun({ pipelineId: req.params.id, input: req.body.input }, { actorUserId: actor(req) });
+    res.status(202).json(result);
+  } catch (error) { fail(error, res); }
+});
+router.get("/sub-engines/pipelines/runs/:id", requireAuth, (req, res) => {
+  res.json(dataPipelineEngine.get(req.params.id) ?? null);
 });
 
 router.post("/admin/sub-engines/governance", requireAdmin, (req, res) => {
@@ -54,7 +72,15 @@ router.post("/admin/sub-engines/dr/backups", requireAdmin, (req, res) => {
   try { res.status(201).json(disasterRecoveryEngine.catalog({ ...req.body, actorUserId: actor(req) })); } catch (error) { fail(error, res); }
 });
 router.post("/admin/sub-engines/dr/backups/:id/verify", requireAdmin, (req, res) => {
-  try { res.json(disasterRecoveryEngine.verify(req.params.id, actor(req))); } catch (error) { fail(error, res); }
+  try {
+    if (req.body?.async) {
+      void scheduleBackupVerification({ backupId: req.params.id }, { actorUserId: actor(req) })
+        .then((job) => res.status(202).json(job))
+        .catch((error) => fail(error, res));
+      return;
+    }
+    res.json(disasterRecoveryEngine.verify(req.params.id, actor(req)));
+  } catch (error) { fail(error, res); }
 });
 router.post("/admin/sub-engines/dr/backups/:id/plans", requireAdmin, (req, res) => {
   try { res.status(201).json(disasterRecoveryEngine.planRestore(req.params.id, req.body.dependencies ?? [], Boolean(req.body.drill), actor(req))); } catch (error) { fail(error, res); }

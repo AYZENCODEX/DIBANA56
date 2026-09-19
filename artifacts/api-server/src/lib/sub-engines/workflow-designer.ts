@@ -1,4 +1,4 @@
-import { AuditSink, EngineError, clone } from "./common";
+import { AuditSink, EngineError, clone, emitSubEngineEvent } from "./common";
 import { InvalidDefinitionError, validateDefinition } from "../workflow/definition-store";
 import type { WorkflowDefinition } from "../workflow/types";
 
@@ -28,6 +28,7 @@ export class WorkflowDesignerEngine {
     versions.push(definition); this.published.set(workflowId, versions);
     draft.status = "published"; draft.publishedAt = new Date(); draft.publishedBy = actorUserId;
     this.audit.record({ engine: "workflow-designer", action: "workflow.published", actorUserId, organizationId: draft.organizationId, subjectId: workflowId, metadata: { version: definition.version } });
+    emitSubEngineEvent({ type: "subengine.workflow.published", actorUserId, organizationId: draft.organizationId, aggregate: { type: "workflow", id: workflowId }, payload: { workflowId, version: definition.version } });
     return clone(definition);
   }
 

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { AuditSink, EngineError, clone } from "./common";
+import { AuditSink, EngineError, clone, emitSubEngineEvent } from "./common";
 import type { EventEnvelope, EventHandler } from "../event-bus/types";
 
 type ReplayInput = {
@@ -52,6 +52,7 @@ export class EventReplayEngine {
       }
       run.status = run.failed ? "failed" : "completed"; run.completedAt = new Date();
       this.audit.record({ engine: "event-replay", action: "replay.completed", actorUserId: input.actorUserId, organizationId: input.organizationId, subjectId: run.id, metadata: { selected: run.selected, processed: run.processed, failed: run.failed, dryRun: run.dryRun } });
+      emitSubEngineEvent({ type: "subengine.replay.completed", actorUserId: input.actorUserId, organizationId: input.organizationId, aggregate: { type: "replay-run", id: run.id }, payload: { runId: run.id, status: run.status, selected: run.selected, processed: run.processed, failed: run.failed, dryRun: run.dryRun } });
       return clone(run);
     } catch (error) {
       run.status = "failed"; run.completedAt = new Date();
@@ -64,6 +65,7 @@ export class EventReplayEngine {
     if (!this.authorize(actorUserId, "event.replay.cancel")) throw new EngineError("Replay cancellation is not authorized", "REPLAY_NOT_AUTHORIZED", 403);
     this.cancelled.add(runId);
     this.audit.record({ engine: "event-replay", action: "replay.cancel_requested", actorUserId, subjectId: runId, metadata: {} });
+    emitSubEngineEvent({ type: "subengine.replay.cancel_requested", actorUserId, aggregate: { type: "replay-run", id: runId }, payload: { runId } });
   }
 
   get(runId: string): ReplayRun | undefined { return clone(this.runs.get(runId)); }

@@ -17,6 +17,37 @@ export type AuditEvent = {
   createdAt: Date;
 };
 
+export type SubEngineEvent = {
+  type: string;
+  payload: Record<string, unknown>;
+  actorUserId?: number | null;
+  organizationId?: number | null;
+  aggregate?: { type: string; id: string };
+};
+
+export type SubEngineEventSink = (event: SubEngineEvent) => void;
+
+let eventSink: SubEngineEventSink = () => {};
+
+/**
+ * Engines stay independent from the durable event-bus implementation. Boot
+ * installs the sink after the database/migrations are ready; tests can leave
+ * the default no-op sink in place or install an in-memory sink.
+ */
+export function setSubEngineEventSink(sink: SubEngineEventSink): void {
+  eventSink = sink;
+}
+
+export function emitSubEngineEvent(event: SubEngineEvent): void {
+  try {
+    eventSink(event);
+  } catch {
+    // Event publication is best-effort for synchronous engine APIs. The
+    // audit record remains the local failure-safe record; async sinks should
+    // report their own durable publication failure.
+  }
+}
+
 export interface AuditSink {
   record(event: Omit<AuditEvent, "id" | "createdAt">): void;
 }

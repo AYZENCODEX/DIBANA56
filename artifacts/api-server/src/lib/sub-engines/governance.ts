@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { AuditSink, EngineError, clone } from "./common";
+import { AuditSink, EngineError, clone, emitSubEngineEvent } from "./common";
 
 export type Classification = "public" | "internal" | "confidential" | "restricted";
 export type LifecycleState = "active" | "held" | "pending_deletion" | "deleted";
@@ -24,6 +24,13 @@ export class DataGovernanceEngine {
     Object.assign(record, { ...clone(input), updatedAt: now });
     this.records.set(record.id, record);
     this.audit.record({ engine: "data-governance", action: "governance.registered", actorUserId, organizationId: input.organizationId, subjectId: record.id, metadata: { classification: input.classification } });
+    emitSubEngineEvent({
+      type: "subengine.governance.registered",
+      actorUserId,
+      organizationId: input.organizationId,
+      aggregate: { type: "governance-record", id: record.id },
+      payload: { recordId: record.id, resourceType: record.resourceType, resourceId: record.resourceId, classification: record.classification },
+    });
     return clone(record);
   }
 
@@ -33,6 +40,7 @@ export class DataGovernanceEngine {
     this.holds.set(hold.id, hold);
     record.lifecycle = "held"; record.updatedAt = new Date();
     this.audit.record({ engine: "data-governance", action: "governance.hold_added", actorUserId, organizationId: record.organizationId, subjectId: recordId, metadata: { kind, reason } });
+    emitSubEngineEvent({ type: "subengine.governance.hold_added", actorUserId, organizationId: record.organizationId, aggregate: { type: "governance-record", id: recordId }, payload: { recordId, holdId: hold.id, kind, reason } });
     return clone(hold);
   }
 
@@ -44,6 +52,7 @@ export class DataGovernanceEngine {
     if (!this.activeHold(record.id)) record.lifecycle = "active";
     record.updatedAt = new Date();
     this.audit.record({ engine: "data-governance", action: "governance.hold_released", actorUserId, organizationId: record.organizationId, subjectId: record.id, metadata: { holdId } });
+    emitSubEngineEvent({ type: "subengine.governance.hold_released", actorUserId, organizationId: record.organizationId, aggregate: { type: "governance-record", id: record.id }, payload: { recordId: record.id, holdId } });
   }
 
   requestDeletion(recordId: string, actorUserId?: number | null): GovernanceRecord {
@@ -51,6 +60,7 @@ export class DataGovernanceEngine {
     if (this.activeHold(recordId)) throw new EngineError("Protected data cannot be deleted while a hold is active", "GOVERNANCE_HOLD_BLOCKED", 409);
     record.lifecycle = "pending_deletion"; record.updatedAt = new Date();
     this.audit.record({ engine: "data-governance", action: "governance.deletion_requested", actorUserId, organizationId: record.organizationId, subjectId: record.id, metadata: {} });
+    emitSubEngineEvent({ type: "subengine.governance.deletion_requested", actorUserId, organizationId: record.organizationId, aggregate: { type: "governance-record", id: record.id }, payload: { recordId: record.id, resourceType: record.resourceType, resourceId: record.resourceId } });
     return clone(record);
   }
 
@@ -59,12 +69,32 @@ export class DataGovernanceEngine {
     if (this.activeHold(recordId)) throw new EngineError("Protected data cannot be deleted while a hold is active", "GOVERNANCE_HOLD_BLOCKED", 409);
     record.lifecycle = "deleted"; record.updatedAt = new Date();
     this.audit.record({ engine: "data-governance", action: "governance.deleted", actorUserId, organizationId: record.organizationId, subjectId: record.id, metadata: {} });
+    emitSubEngineEvent({ type: "subengine.governance.deleted", actorUserId, organizationId: record.organizationId, aggregate: { type: "governance-record", id: record.id }, payload: { recordId: record.id, resourceType: record.resourceType, resourceId: record.resourceId } });
     return clone(record);
   }
 
   canExport(recordId: string): boolean {
     const record = this.get(recordId);
     return record.lifecycle !== "deleted" && record.classification !== "restricted";
+  }
+
+  canAccess(recordId: string, organizationId: number): boolean {
+    const record = this.get(recordId);
+    return record.organizationId === organizationId && record.lifecycle !== "deleted";
+  }
+
+  enforceRetention(now = new Date()): number {
+    let deleted = 0;
+    for (const record of this.records.values()) {
+      if (record.lifecycle === "active" && record.retentionUntil && record.retentionUntil <= now && !this.activeHold(record.id)) {
+        record.lifecycle = "deleted";
+        record.updatedAt = now;
+        deleted++;
+        this.audit.record({ engine: "data-governance", action: "governance.retention_deleted", organizationId: record.organizationId, subjectId: record.id, metadata: { retentionUntil: record.retentionUntil.toISOString() } });
+        emitSubEngineEvent({ type: "subengine.governance.deleted", organizationId: record.organizationId, aggregate: { type: "governance-record", id: record.id }, payload: { recordId: record.id, resourceType: record.resourceType, resourceId: record.resourceId, reason: "retention" } });
+      }
+    }
+    return deleted;
   }
 
   get(recordId: string): GovernanceRecord {

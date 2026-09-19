@@ -14,3 +14,17 @@ mtime_ms = 1789758784993
 storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:458782ef-1445-42c8-894c-8e6a5f9f8903/a02177db-0e70-43ff-8ffd-2d23d6c16c56/9d368b27-405f-43df-8b32-2a0cc2573a04"
 storage_version_token = "1789758791860188"
 content_type = "application/octet-stream"
+
+[[outputs]]
+id = "WP3Dm2C2V3Ui6U0oew4_u"
+uri = "file://ayzen-codebase-clean.zip"
+type = "unspecified"
+title = "AYZEN clean source code"
+description = "Project source archive excluding node_modules, dist, cache directories, build output, coverage, and repository metadata."
+logical_id = "5c1102d7-e309-4c35-a124-3433dd916672"
+content_hash = "sha256:697c33db40c155a8260fea5a9810ca255561f4bb1a6b25cd5b38ea58ed84f07f"
+size = 22317849
+mtime_ms = 1789802232432
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:42aacae9-c23b-447e-bf9a-c44ccfd62403/5c1102d7-e309-4c35-a124-3433dd916672/d787ac55-ea26-473a-b514-c17e642529e8"
+storage_version_token = "1789802238988988"
+content_type = "application/octet-stream"

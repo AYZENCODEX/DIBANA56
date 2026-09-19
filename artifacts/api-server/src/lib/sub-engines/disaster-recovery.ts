@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { AuditSink, EngineError, clone } from "./common";
+import { AuditSink, EngineError, clone, emitSubEngineEvent } from "./common";
 
 export type BackupArtifact = { name: string; content: string | Buffer; checksum?: string; verified?: boolean };
 export type BackupRecord = { id: string; organizationId?: number; createdAt: Date; artifacts: Array<Omit<BackupArtifact, "content"> & { checksum: string }>; status: "catalogued" | "verified" | "failed" };
@@ -23,6 +23,7 @@ export class DisasterRecoveryEngine {
     const record: BackupRecord = { id: randomUUID(), organizationId: input.organizationId, createdAt: new Date(), artifacts, status: "catalogued" };
     this.backups.set(record.id, { record, content });
     this.audit.record({ engine: "disaster-recovery", action: "backup.catalogued", actorUserId: input.actorUserId, organizationId: input.organizationId, subjectId: record.id, metadata: { artifacts: artifacts.map((artifact) => artifact.name) } });
+    emitSubEngineEvent({ type: "subengine.backup.catalogued", actorUserId: input.actorUserId, organizationId: input.organizationId, aggregate: { type: "backup", id: record.id }, payload: { backupId: record.id, artifacts: artifacts.map((artifact) => artifact.name) } });
     return clone(record);
   }
 
@@ -37,6 +38,7 @@ export class DisasterRecoveryEngine {
     }
     backup.record.status = valid ? "verified" : "failed";
     this.audit.record({ engine: "disaster-recovery", action: valid ? "backup.verified" : "backup.verification_failed", actorUserId, organizationId: backup.record.organizationId, subjectId: backupId, metadata: { valid } });
+    emitSubEngineEvent({ type: valid ? "subengine.backup.verified" : "subengine.backup.verification_failed", actorUserId, organizationId: backup.record.organizationId, aggregate: { type: "backup", id: backupId }, payload: { backupId, valid } });
     return clone(backup.record);
   }
 
@@ -46,6 +48,7 @@ export class DisasterRecoveryEngine {
     const plan: RestorePlan = { id: randomUUID(), backupId, dependencies: [...dependencies], orderedDependencies: ordered, drill, status: "planned" };
     this.plans.set(plan.id, plan);
     this.audit.record({ engine: "disaster-recovery", action: "restore.plan_created", actorUserId, organizationId: backup.organizationId, subjectId: plan.id, metadata: { backupId, orderedDependencies: ordered, drill } });
+    emitSubEngineEvent({ type: "subengine.restore.plan_created", actorUserId, organizationId: backup.organizationId, aggregate: { type: "restore-plan", id: plan.id }, payload: { planId: plan.id, backupId, dependencies: ordered, drill } });
     return clone(plan);
   }
 
@@ -56,6 +59,7 @@ export class DisasterRecoveryEngine {
     if (backup.status !== "verified") { plan.status = "failed"; plan.failure = "Backup integrity verification failed"; throw new EngineError(plan.failure, "DR_VERIFICATION_FAILED", 409); }
     plan.status = "passed";
     this.audit.record({ engine: "disaster-recovery", action: "restore.drill_passed", actorUserId, organizationId: backup.organizationId, subjectId: plan.id, metadata: { dependencies: plan.orderedDependencies } });
+    emitSubEngineEvent({ type: "subengine.restore.drill_passed", actorUserId, organizationId: backup.organizationId, aggregate: { type: "restore-plan", id: plan.id }, payload: { planId, backupId: plan.backupId, dependencies: plan.orderedDependencies } });
     return clone(plan);
   }
 

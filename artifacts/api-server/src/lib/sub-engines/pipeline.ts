@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { AuditSink, EngineError, clone } from "./common";
+import { AuditSink, EngineError, clone, emitSubEngineEvent } from "./common";
 
 export type PipelineStage = { id: string; run(input: unknown, context: { runId: string; stageId: string }): Promise<unknown> };
 export type PipelineDefinition = { id: string; version: number; stages: PipelineStage[]; organizationId?: number; enabled: boolean };
@@ -23,6 +23,7 @@ export class DataPipelineEngine {
     if (!definition || !definition.enabled) throw new EngineError("Pipeline is unavailable", "PIPELINE_NOT_FOUND", 404);
     const run: PipelineRun = { id: randomUUID(), pipelineId, version: definition.version, status: "running", checkpoint: 0, startedAt: new Date(), lineage: [] };
     this.runs.set(run.id, run);
+    emitSubEngineEvent({ type: "subengine.pipeline.started", actorUserId, organizationId: definition.organizationId, aggregate: { type: "pipeline-run", id: run.id }, payload: { runId: run.id, pipelineId, version: run.version } });
     return this.execute(run, definition, input, actorUserId);
   }
 
@@ -49,9 +50,11 @@ export class DataPipelineEngine {
       }
       run.output = clone(value); run.status = "completed"; run.completedAt = new Date();
       this.audit.record({ engine: "data-pipeline", action: "pipeline.completed", actorUserId, organizationId: definition.organizationId, subjectId: run.id, metadata: { checkpoint: run.checkpoint, lineage: run.lineage } });
+      emitSubEngineEvent({ type: "subengine.pipeline.completed", actorUserId, organizationId: definition.organizationId, aggregate: { type: "pipeline-run", id: run.id }, payload: { runId: run.id, pipelineId: run.pipelineId, checkpoint: run.checkpoint, lineage: run.lineage } });
     } catch (error) {
       run.status = "failed"; run.error = error instanceof Error ? error.message : String(error);
       this.audit.record({ engine: "data-pipeline", action: "pipeline.failed", actorUserId, organizationId: definition.organizationId, subjectId: run.id, metadata: { checkpoint: run.checkpoint, error: run.error } });
+      emitSubEngineEvent({ type: "subengine.pipeline.failed", actorUserId, organizationId: definition.organizationId, aggregate: { type: "pipeline-run", id: run.id }, payload: { runId: run.id, pipelineId: run.pipelineId, checkpoint: run.checkpoint, error: run.error } });
     }
     return clone(run);
   }

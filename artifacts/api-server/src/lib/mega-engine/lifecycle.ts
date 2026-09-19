@@ -23,6 +23,7 @@ import { PolicyEngine } from "../policy/policy-engine";
 import { createResourceOwnershipRule } from "../policy/resource";
 import { DrizzleSubjectProvider } from "../policy/pip/drizzle-subject-provider";
 import type { WorkflowRuntimeEnv } from "../workflow";
+import { registerSubEngineIntegration } from "../sub-engines/integration";
 
 let started = false;
 let stopping = false;
@@ -80,6 +81,7 @@ export async function startMegaEngine(): Promise<void> {
   registerWorkflowResumeHandler(workflowRuntimeEnv);
   registerAyzenDomainEvents();
   registerMegaEngineAuditIntegration();
+  await registerSubEngineIntegration();
   await registerWorkflowEventTriggers(workflowRuntimeEnv);
   await registerWorkflowScheduleTriggers(workflowRuntimeEnv);
   await registerWorkflowDelayedTriggers(workflowRuntimeEnv);
