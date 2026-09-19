@@ -50,6 +50,7 @@ import { apiKeyScopeGate } from "./middlewares/api-key-scope";
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { runWithTraceContext, traceContextFromHeaders } from "./lib/trace-context";
+import { sioraRequestTelemetry } from "./lib/siora/request-middleware";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -135,6 +136,9 @@ app.use((req, res, next) => (req.originalUrl === RESEND_WEBHOOK_PATH ? next() : 
 app.use(express.text({ type: ["text/csv", "text/plain"], limit: "5mb" }));
 app.use(dedupeQueryParams);
 app.use(sanitizeBody);
+// SIORA Seasons 1–5: observe normalized request behavior without replacing
+// auth, sessions, rate limiting, or policy decisions.
+app.use(sioraRequestTelemetry);
 
 // OIDC discovery well-known endpoints — deliberately mounted at the bare
 // origin (not under /api, and not behind apiKeyScopeGate): OIDC/RFC 8414
