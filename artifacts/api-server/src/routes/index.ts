@@ -156,6 +156,7 @@ import financeRouter from "./finance";
 import financeInvoicesRouter from "./finance-invoices";
 import projectTemplatesRouter from "./project-templates";
 import sharedRouter from "./shared";
+import newEnginesRouter from "./new-engines";
 
 const router: IRouter = Router();
 
@@ -302,6 +303,7 @@ router.use(financeRouter);
 router.use(financeInvoicesRouter);
 router.use(projectTemplatesRouter);
 router.use(sharedRouter);
+router.use(newEnginesRouter);
 router.use(resendWebhookRouter);
 router.use(ayzenMailboxRouter);
 router.use(resendAdminRouter);
