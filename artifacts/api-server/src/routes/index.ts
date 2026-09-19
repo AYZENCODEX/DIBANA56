@@ -31,6 +31,7 @@ import syncRouter from "./sync";
 import polymarketRouter from "./polymarket";
 import adminWalletRouter from "./admin-wallet";
 import configRouter from "./config";
+import subEnginesRouter from "./sub-engines";
 import adminOidcRolloutRouter from "./admin-oidc-rollout";
 // OIDC Roadmap — Season 3, Phase 6e-d: Monitoring — admin GET for the
 // Back-Channel Logout retry queue's stats/health. See that router's own
@@ -247,6 +248,7 @@ router.use(syncRouter);
 router.use(polymarketRouter);
 router.use(adminWalletRouter);
 router.use(configRouter);
+router.use(subEnginesRouter);
 // Season 3, Phase 5c-c/5c-d/5c-e/5d-b/5e-c/5e-d — admin GET/PATCH for the
 // OIDC rollout flag + comparison stats + health. Same `requireDev`-gated
 // tier as configRouter above; see routes/admin-oidc-rollout.ts's own

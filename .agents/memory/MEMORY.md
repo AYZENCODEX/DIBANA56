@@ -1,0 +1,1 @@
+- [Imported pnpm toolchain](pnpm-toolchain.md) — this repository pins pnpm in packageManager, but the available wrapper may try an offline self-bootstrap before scripts can run.

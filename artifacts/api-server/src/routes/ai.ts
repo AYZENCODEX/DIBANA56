@@ -3,6 +3,7 @@ import { db, vaultEntriesTable, usersTable, userProjectsTable, projectsTable, ta
 import { eq, desc, count, sql } from "drizzle-orm";
 import { requireAuth, getRequestUser } from "../middlewares/auth";
 import { requireCreditBalance, chargeCredits } from "../services/credit-meter";
+import { aiGatewayEngine, type AIMessage } from "../lib/sub-engines";
 
 const router = Router();
 
@@ -20,6 +21,44 @@ export const GROQ_MODELS = [
 ];
 
 const DEFAULT_MODEL = "llama-3.3-70b-versatile";
+const OPENROUTER_MODEL = "meta-llama/llama-3.3-70b-instruct:free";
+
+function registerAIGatewayProviders(): void {
+  aiGatewayEngine.registerProvider({
+    name: "groq",
+    async complete(request) {
+      const apiKey = process.env.GROQ_API_KEY;
+      if (!apiKey) throw new Error("GROQ_API_KEY not set");
+      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ model: request.model, messages: request.messages, max_tokens: request.maxTokens ?? 1024, temperature: request.temperature }),
+      });
+      const data = await response.json() as { choices?: Array<{ message?: { content?: string } }>; usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }; error?: unknown };
+      if (!response.ok || data.error) throw new Error(`Groq request failed: ${JSON.stringify(data.error ?? data)}`);
+      return { content: data.choices?.[0]?.message?.content ?? "", usage: { inputTokens: data.usage?.prompt_tokens, outputTokens: data.usage?.completion_tokens, totalTokens: data.usage?.total_tokens } };
+    },
+  });
+  aiGatewayEngine.registerProvider({
+    name: "openrouter",
+    async complete(request) {
+      const apiKey = process.env.OPENROUTER_API_KEY;
+      if (!apiKey) throw new Error("OPENROUTER_API_KEY not set");
+      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", "HTTP-Referer": "https://ayzen.tech" },
+        body: JSON.stringify({ model: request.model, messages: request.messages, max_tokens: request.maxTokens ?? 1024, temperature: request.temperature }),
+      });
+      const data = await response.json() as { choices?: Array<{ message?: { content?: string } }>; usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }; error?: unknown };
+      if (!response.ok || data.error) throw new Error(`OpenRouter request failed: ${JSON.stringify(data.error ?? data)}`);
+      return { content: data.choices?.[0]?.message?.content ?? "", usage: { inputTokens: data.usage?.prompt_tokens, outputTokens: data.usage?.completion_tokens, totalTokens: data.usage?.total_tokens } };
+    },
+  });
+  for (const model of GROQ_MODELS) aiGatewayEngine.registerModel(model.id, "groq");
+  aiGatewayEngine.registerModel(OPENROUTER_MODEL, "openrouter");
+}
+
+registerAIGatewayProviders();
 
 const USER_SYSTEM = `You are AYZEN AI — a dedicated crypto airdrop intelligence assistant for the AYZEN Airdrop Command Center.
 
@@ -253,71 +292,31 @@ router.post("/ai/chat", requireAuth, requireCreditBalance("zynth.ai_query", { ex
   const selectedModel = (model && GROQ_MODELS.find(m => m.id === model)) ? model : DEFAULT_MODEL;
   const allMessages = [{ role: "system", content: systemPrompt }, ...messages.slice(-20)];
 
-  type ProviderResult = { ok: true; data: Record<string, unknown>; label: string } | { ok: false; error: string };
-
-  async function tryGroq(): Promise<ProviderResult> {
-    if (!groqKey) return { ok: false, error: "GROQ_API_KEY not set" };
-    try {
-      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${groqKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model: selectedModel, messages: allMessages, max_tokens: 1024 }),
-      });
-      const data = await response.json() as Record<string, unknown>;
-      if (!response.ok || (data as any)?.error) {
-        return { ok: false, error: `Groq: ${JSON.stringify((data as any)?.error ?? data)}` };
-      }
-      return { ok: true, data, label: selectedModel };
-    } catch (err: any) {
-      return { ok: false, error: `Groq: ${err?.message ?? "request failed"}` };
+  try {
+    const response = await aiGatewayEngine.complete({
+      messages: allMessages as AIMessage[],
+      model: selectedModel,
+      maxTokens: 1024,
+      scope: { userId },
+    }, { fallbackModels: [OPENROUTER_MODEL], timeoutMs: 30_000, retries: 1, actorUserId: userId });
+    // Charge-on-success remains after the gateway returns a normalized reply,
+    // so provider failures and fallbacks never debit credits.
+    let creditsCharge: { newBalance: number; charged: number } | null = null;
+    if (!isAdmin) {
+      const charge = await chargeCredits(userId, "zynth.ai_query");
+      if (charge.ok) creditsCharge = { newBalance: charge.newBalance, charged: charge.charged };
     }
+    res.json({
+      choices: [{ message: { role: "assistant", content: response.content } }],
+      model: response.model,
+      provider: response.provider,
+      usage: response.usage,
+      _model: response.model,
+      _credits: creditsCharge,
+    });
+  } catch (error) {
+    res.status(502).json({ error: "All AI providers failed. Check that your API keys are valid.", code: "AI_ALL_PROVIDERS_FAILED", details: error instanceof Error ? error.message : "unknown error" });
   }
-
-  async function tryOpenRouter(): Promise<ProviderResult> {
-    if (!openRouterKey) return { ok: false, error: "OPENROUTER_API_KEY not set" };
-    try {
-      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${openRouterKey}`, "Content-Type": "application/json", "HTTP-Referer": "https://ayzen.tech" },
-        body: JSON.stringify({ model: "meta-llama/llama-3.3-70b-instruct:free", messages: allMessages, max_tokens: 1024 }),
-      });
-      const data = await response.json() as Record<string, unknown>;
-      if (!response.ok || (data as any)?.error) {
-        return { ok: false, error: `OpenRouter: ${JSON.stringify((data as any)?.error ?? data)}` };
-      }
-      return { ok: true, data, label: "llama-3.3-70b (OpenRouter)" };
-    } catch (err: any) {
-      return { ok: false, error: `OpenRouter: ${err?.message ?? "request failed"}` };
-    }
-  }
-
-  const providers = [tryGroq, tryOpenRouter];
-  const errors: string[] = [];
-
-  for (const provider of providers) {
-    const result = await provider();
-    if (result.ok) {
-      // Charge-on-success (see services/credit-meter.ts): only now, after a
-      // provider actually returned a reply, do we touch the ledger — a
-      // Groq+OpenRouter double-failure below never costs the user credits.
-      let creditsCharge: { newBalance: number; charged: number } | null = null;
-      if (!isAdmin) {
-        const charge = await chargeCredits(userId, "zynth.ai_query");
-        if (charge.ok) creditsCharge = { newBalance: charge.newBalance, charged: charge.charged };
-        // If this somehow fails (balance moved between the pre-flight check
-        // and now), we still return the reply — it already cost tokens —
-        // rather than discard a completed AI response over a ledger race.
-      }
-      res.json({ ...result.data, _model: result.label, _credits: creditsCharge });
-      return;
-    }
-    errors.push(result.error);
-  }
-
-  res.status(502).json({
-    error: "All AI providers failed. Check that your API keys are valid.",
-    details: errors,
-  });
 });
 
 router.get("/ai/models", (_req, res) => {
