@@ -14,6 +14,7 @@ import { EventReplayEngine } from "./event-replay";
 import { DataPipelineEngine } from "./pipeline";
 import { WorkflowDesignerEngine } from "./workflow-designer";
 import { DisasterRecoveryEngine } from "./disaster-recovery";
+import { publishDefinition } from "../workflow/definition-store";
 
 export * from "./common";
 export * from "./configuration";
@@ -44,7 +45,7 @@ export const fileBlobEngine = new FileBlobEngine(subEngineAudit);
 export const dataGovernanceEngine = new DataGovernanceEngine(subEngineAudit);
 export const eventReplayEngine = new EventReplayEngine(subEngineAudit);
 export const dataPipelineEngine = new DataPipelineEngine(subEngineAudit);
-export const workflowDesignerEngine = new WorkflowDesignerEngine(subEngineAudit);
+export const workflowDesignerEngine = new WorkflowDesignerEngine(subEngineAudit, undefined, publishDefinition);
 export const disasterRecoveryEngine = new DisasterRecoveryEngine(subEngineAudit);
 
 configurationEngine.register({ key: "ai.default_model", schema: z.string().min(1), defaultValue: "llama-3.3-70b-versatile", allowedLayers: ["global", "environment", "organization"] });

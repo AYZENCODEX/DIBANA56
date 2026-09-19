@@ -81,7 +81,7 @@ export async function startMegaEngine(): Promise<void> {
   registerWorkflowResumeHandler(workflowRuntimeEnv);
   registerAyzenDomainEvents();
   registerMegaEngineAuditIntegration();
-  await registerSubEngineIntegration();
+  await registerSubEngineIntegration(workflowRuntimeEnv);
   await registerWorkflowEventTriggers(workflowRuntimeEnv);
   await registerWorkflowScheduleTriggers(workflowRuntimeEnv);
   await registerWorkflowDelayedTriggers(workflowRuntimeEnv);

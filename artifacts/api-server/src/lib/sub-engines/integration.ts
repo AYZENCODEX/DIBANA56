@@ -14,6 +14,12 @@ import {
 } from "../scheduler";
 import { logger } from "../logger";
 import {
+  registerWorkflowDelayedTriggers,
+  registerWorkflowEventTriggers,
+  registerWorkflowScheduleTriggers,
+  type WorkflowRuntimeEnv,
+} from "../workflow";
+import {
   dataGovernanceEngine,
   disasterRecoveryEngine,
   eventReplayEngine,
@@ -70,7 +76,7 @@ let registered = false;
  * usable in isolation, while production mutations become durable outbox
  * events and are therefore available to workflow triggers and replay.
  */
-export async function registerSubEngineIntegration(): Promise<void> {
+export async function registerSubEngineIntegration(workflowRuntimeEnv: WorkflowRuntimeEnv = {}): Promise<void> {
   if (registered) return;
   registered = true;
 
@@ -108,6 +114,19 @@ export async function registerSubEngineIntegration(): Promise<void> {
       classification: payload.mimeType.startsWith("image/") ? "internal" : "confidential",
       sensitiveFields: [],
     }, envelope.actor?.userId);
+  });
+
+  // Designer publication is durable, but workflow subscriptions are
+  // intentionally in-memory. Refresh all three trigger families after the
+  // publication event so a new definition takes effect without a restart.
+  subscribe("subengine.workflow.published", "subengine-workflow-trigger-refresh", async () => {
+    try {
+      await registerWorkflowEventTriggers(workflowRuntimeEnv);
+      await registerWorkflowScheduleTriggers(workflowRuntimeEnv);
+      await registerWorkflowDelayedTriggers(workflowRuntimeEnv);
+    } catch (error) {
+      logger.error({ error }, "Published workflow trigger refresh failed");
+    }
   });
 
   registerJobHandler(SUBENGINE_BLOB_CLEANUP_JOB, async () => {

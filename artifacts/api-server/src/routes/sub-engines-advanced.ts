@@ -64,7 +64,9 @@ router.post("/admin/sub-engines/workflow-drafts", requireAdmin, (req, res) => {
   try { res.status(201).json(workflowDesignerEngine.saveDraft(req.body.definition, req.body.organizationId, actor(req))); } catch (error) { fail(error, res); }
 });
 router.post("/admin/sub-engines/workflow-drafts/:id/publish", requireAdmin, (req, res) => {
-  try { res.json(workflowDesignerEngine.publish(req.params.id, actor(req))); } catch (error) { fail(error, res); }
+  void workflowDesignerEngine.publish(req.params.id, actor(req))
+    .then((definition) => res.json(definition))
+    .catch((error) => fail(error, res));
 });
 router.get("/sub-engines/workflows/:id", requireAuth, (req, res) => res.json(workflowDesignerEngine.get(req.params.id, req.query.version ? Number(req.query.version) : undefined) ?? null));
 
