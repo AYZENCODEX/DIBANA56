@@ -31,6 +31,7 @@ router.post("/siora/evaluate", requireAuth, async (req, res) => {
 });
 
 router.get("/siora/engines", requireAdmin, (_req, res) => res.json(sioraRuntime.listEngines()));
+router.get("/siora/health", requireAdmin, (_req, res) => res.json(sioraRuntime.health()));
 router.get("/siora/events", requireAdmin, (req, res) => res.json(sioraRuntime.recentEvents(Number(req.query.limit) || 50)));
 router.get("/siora/signals", requireAdmin, (req, res) => res.json(sioraRuntime.recentSignals(Number(req.query.limit) || 100)));
 router.get("/siora/evaluations", requireAdmin, (req, res) => res.json(sioraRuntime.recentEvaluations(Number(req.query.limit) || 50)));
@@ -58,6 +59,16 @@ router.put("/admin/siora/indicators/:type/:value", requireAdmin, (req, res) => {
 router.get("/admin/siora/indicators", requireAdmin, (_req, res) => res.json(threatIntelligenceEngine.list()));
 router.get("/admin/siora/incidents", requireAdmin, (_req, res) => res.json(sioraOperations.listIncidents()));
 router.get("/admin/siora/response-actions", requireAdmin, (_req, res) => res.json(sioraOperations.listActions()));
+router.patch("/admin/siora/response-actions/:id", requireAdmin, (req, res) => {
+  try {
+    const status = req.body.status;
+    if (status !== "completed" && status !== "failed") {
+      res.status(400).json({ error: "status must be completed or failed", code: "SIORA_ACTION_STATUS_INVALID" });
+      return;
+    }
+    res.json(sioraOperations.transitionAction(req.params.id, status));
+  } catch (error) { handleError(error, res); }
+});
 router.post("/admin/siora/incidents", requireAdmin, (req, res) => {
   try {
     res.status(201).json(sioraOperations.createIncident({

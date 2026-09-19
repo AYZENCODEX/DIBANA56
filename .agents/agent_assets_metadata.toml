@@ -28,3 +28,17 @@ mtime_ms = 1789802232432
 storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:42aacae9-c23b-447e-bf9a-c44ccfd62403/5c1102d7-e309-4c35-a124-3433dd916672/d787ac55-ea26-473a-b514-c17e642529e8"
 storage_version_token = "1789802238988988"
 content_type = "application/octet-stream"
+
+[[outputs]]
+id = "wmHyG72TPKjsp7B4uSgx9"
+uri = "file://siora-codebase-source.zip"
+type = "unspecified"
+title = "SIORA codebase source"
+description = "Project source archive excluding node_modules, dist, caches, build output, coverage, and existing zip archives."
+logical_id = "43365e68-ee1b-40f5-8a02-2e50541b9e77"
+content_hash = "sha256:2b9b379d93a73a5c617cbfe869fa9d15ae9cfd347ec8b18cec6862eb4b9077a1"
+size = 7670875
+mtime_ms = 1789814754725
+storage_uri = "gcs://replit-rams-assets-sisko/rams/assets/repl:10c278b0-a890-4862-9de8-185273fdf52d/43365e68-ee1b-40f5-8a02-2e50541b9e77/fde3bf54-feb9-4db7-886a-3bbae658744d"
+storage_version_token = "1789814760766578"
+content_type = "application/octet-stream"

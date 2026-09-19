@@ -3,6 +3,7 @@ import { cacheEngine, featureFlagEngine, rateLimitEngine, rulesEngine, subEngine
 import { getCurrentTraceContext, newTraceId } from "../trace-context";
 import type {
   SioraDecision, SioraEngine, SioraEngineResult, SioraEngineTools, SioraEvaluation, SioraEvent, SioraSignal,
+  SioraPolicyContext,
 } from "./contracts";
 import { newSioraEvent, sanitizeRecord } from "./contracts";
 import { sioraOperations } from "./operations";
@@ -96,6 +97,7 @@ export class SioraRuntime {
     const signals = results.flatMap((result) => result.signals);
     const decision = this.decisionFor(results, signals);
     const responseAction = sioraOperations.recommend(signals, decision, event.trace.traceId);
+    const policyContext = this.toPolicyContext(signals, event.trace.traceId);
     const evaluation = {
       eventId: event.id,
       traceId: event.trace.traceId,
@@ -103,6 +105,7 @@ export class SioraRuntime {
       signals,
       results,
       responseActionId: responseAction?.id,
+      policyContext,
       completedAt: new Date().toISOString(),
     };
     this.evaluations.push(evaluation);
@@ -113,6 +116,15 @@ export class SioraRuntime {
   recentEvents(limit = 50): SioraEvent[] { return this.events.slice(-Math.max(1, Math.min(limit, 500))).reverse(); }
   recentSignals(limit = 100): SioraSignal[] { return this.signals.slice(-Math.max(1, Math.min(limit, 500))).reverse(); }
   recentEvaluations(limit = 50): SioraEvaluation[] { return this.evaluations.slice(-Math.max(1, Math.min(limit, 500))).reverse(); }
+
+  health(): { status: "ok"; engineCount: number; enabledEngineCount: number; recentEvaluationAt?: string } {
+    return {
+      status: "ok",
+      engineCount: this.engines.size,
+      enabledEngineCount: [...this.configs.values()].filter((config) => config.enabled).length,
+      recentEvaluationAt: this.evaluations.at(-1)?.completedAt,
+    };
+  }
 
   private tools(): SioraEngineTools {
     return {
@@ -137,6 +149,24 @@ export class SioraRuntime {
     if (results.some((result) => result.decision === "step_up")) return "step_up";
     if (signals.some((signal) => severityRank[signal.severity] >= severityRank.high)) return "monitor";
     return "allow";
+  }
+
+  private toPolicyContext(signals: SioraSignal[], traceId: string): SioraPolicyContext {
+    const scoreFor = (engine: string) => Math.round(Math.min(100, signals
+      .filter((signal) => signal.engine === engine)
+      .reduce((max, signal) => Math.max(max, signal.score), 0)));
+    const identityRisk = scoreFor("identity-trust");
+    const policyContext: SioraPolicyContext = {
+      threatScore: scoreFor("threat-intelligence"),
+      identityTrust: Math.max(0, 100 - identityRisk),
+      sessionRisk: scoreFor("session-security"),
+      abuseScore: scoreFor("abuse-detection"),
+      aggregateRisk: scoreFor("risk-anomaly"),
+      confidence: signals.some((signal) => signal.confidence === "high") ? "high" : signals.some((signal) => signal.confidence === "medium") ? "medium" : "low",
+      reasonCodes: [...new Set(signals.map((signal) => signal.code))].slice(0, 20),
+      traceId,
+    };
+    return policyContext;
   }
 
   private async withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {

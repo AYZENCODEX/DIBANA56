@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from "express";
 import { sioraRuntime } from "./index";
 import { getCurrentTraceContext } from "../trace-context";
+import { getSharedAppForHost } from "../shared-apps";
 
 export function sioraRequestTelemetry(req: Request, res: Response, next: NextFunction): void {
   const started = Date.now();
@@ -21,7 +22,12 @@ export function sioraRequestTelemetry(req: Request, res: Response, next: NextFun
           correlationId: getCurrentTraceContext()?.correlationId,
         },
       },
-      data: { statusCode: res.statusCode, durationMs: Date.now() - started, automated: false },
+      data: {
+        statusCode: res.statusCode,
+        durationMs: Date.now() - started,
+        automated: false,
+        sharedAppId: getSharedAppForHost(req.hostname)?.id,
+      },
       trace: getCurrentTraceContext() ?? { traceId: "unknown" },
     }).catch(() => undefined);
   });

@@ -77,7 +77,20 @@ export type SioraEvaluation = {
   signals: SioraSignal[];
   results: SioraEngineResult[];
   responseActionId?: string;
+  policyContext: SioraPolicyContext;
   completedAt: string;
+};
+
+/** Stable, authorization-neutral context consumed by the existing Policy Engine. */
+export type SioraPolicyContext = {
+  threatScore: number;
+  identityTrust: number;
+  sessionRisk: number;
+  abuseScore: number;
+  aggregateRisk: number;
+  confidence: SioraConfidence;
+  reasonCodes: string[];
+  traceId: string;
 };
 
 export type SioraEngine = {

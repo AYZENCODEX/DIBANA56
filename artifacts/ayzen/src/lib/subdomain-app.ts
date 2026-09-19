@@ -160,8 +160,8 @@ function hasPrefix(path: string, prefix: string): boolean {
 /**
  * Detects which AYZEN sub-app (if any) the current hostname is scoped to.
  * Matches:
- *  - configured production hostnames (VITE_SYLO_HOSTS, default
- *    "sylo.ayzen.tech") — exact match.
+ *  - configured production hostnames (VITE_<APP>_HOSTS, each with a matching
+ *    `<app>.ayzen.tech` default) — exact match.
  *  - dev/preview convenience: any hostname whose FIRST label equals a known
  *    app id, e.g. "sylo.localhost" or a "sylo-<replit-preview>" domain —
  *    so this is testable before ayzen.tech DNS/subdomains exist for real.
@@ -171,11 +171,13 @@ export function getCurrentSubdomainApp(): SubdomainApp | null {
   if (typeof window === "undefined") return null;
   const host = window.location.hostname;
 
-  const configuredHosts = ((import.meta.env.VITE_SYLO_HOSTS as string | undefined) ?? "sylo.ayzen.tech")
-    .split(",")
-    .map((h) => h.trim())
-    .filter(Boolean);
-  if (configuredHosts.includes(host)) return { id: "sylo", ...SUBDOMAIN_APPS.sylo };
+  for (const [id, app] of Object.entries(SUBDOMAIN_APPS)) {
+    const configuredHosts = ((import.meta.env[`VITE_${id.toUpperCase()}_HOSTS`] as string | undefined) ?? `${id}.ayzen.tech`)
+      .split(",")
+      .map((h) => h.trim().toLowerCase())
+      .filter(Boolean);
+    if (configuredHosts.includes(host.toLowerCase())) return { id, ...app };
+  }
 
   const firstLabel = host.split(".")[0];
   const app = SUBDOMAIN_APPS[firstLabel];

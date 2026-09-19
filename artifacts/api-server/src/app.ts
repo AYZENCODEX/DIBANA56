@@ -51,6 +51,7 @@ import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { runWithTraceContext, traceContextFromHeaders } from "./lib/trace-context";
 import { sioraRequestTelemetry } from "./lib/siora/request-middleware";
+import { SHARED_APP_DEFINITIONS, getSharedAppHosts } from "./lib/shared-apps";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -280,18 +281,10 @@ app.use(globalErrorHandler as any);
 // too — see subdomain-app.ts's header for why (no user-facing route yet).
 interface SplitAppHostConfig { id: string; hosts: string[]; homePath: string }
 
-const SPLIT_APP_HOST_CONFIG: SplitAppHostConfig[] = [
-  { id: "sylo", hosts: process.env.SYLO_HOSTS ?? "sylo.ayzen.tech", homePath: "/vault" },
-  { id: "ryft", hosts: process.env.RYFT_HOSTS ?? "ryft.ayzen.tech", homePath: "/wallet" },
-  { id: "wisp", hosts: process.env.WISP_HOSTS ?? "wisp.ayzen.tech", homePath: "/mailbox" },
-  { id: "verve", hosts: process.env.VERVE_HOSTS ?? "verve.ayzen.tech", homePath: "/marketplace/hub" },
-  { id: "skarn", hosts: process.env.SKARN_HOSTS ?? "skarn.ayzen.tech", homePath: "/projects" },
-  { id: "zynth", hosts: process.env.ZYNTH_HOSTS ?? "zynth.ayzen.tech", homePath: "/assistant" },
-  { id: "warde", hosts: process.env.WARDE_HOSTS ?? "warde.ayzen.tech", homePath: "/teams" },
-].map((c) => ({
-  id: c.id,
-  hosts: c.hosts.split(",").map((h) => h.trim()).filter(Boolean),
-  homePath: c.homePath,
+const SPLIT_APP_HOST_CONFIG: SplitAppHostConfig[] = SHARED_APP_DEFINITIONS.map((definition) => ({
+  id: definition.id,
+  hosts: getSharedAppHosts(definition),
+  homePath: definition.homePath,
 }));
 
 // Flat hostname → homePath lookup built once at startup, so the per-request

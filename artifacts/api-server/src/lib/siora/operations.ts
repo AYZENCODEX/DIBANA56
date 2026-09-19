@@ -48,6 +48,14 @@ export class SioraOperations {
     return { ...action };
   }
 
+  transitionAction(id: string, status: Extract<SioraResponseAction["status"], "completed" | "failed">): SioraResponseAction {
+    const action = [...this.actions.values()].find((candidate) => candidate.id === id);
+    if (!action) throw new Error("Response action not found");
+    const next = { ...action, status };
+    this.actions.set(action.idempotencyKey, next);
+    return { ...next };
+  }
+
   listIncidents(): SioraIncident[] { return [...this.incidents.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)); }
   listActions(): SioraResponseAction[] { return [...this.actions.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt)); }
 
